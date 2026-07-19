@@ -43,12 +43,14 @@ node scripts/write-env.mjs "$CHAIN_ID" "$RPC_URL"
 REGISTRY_ADDRESS=$(grep VITE_REGISTRY_ADDRESS frontend/.env.local | cut -d= -f2)
 LEDGER_ADDRESS=$(grep VITE_LEDGER_ADDRESS frontend/.env.local | cut -d= -f2)
 TENDER_ADDRESS=$(grep VITE_TENDER_ADDRESS frontend/.env.local | cut -d= -f2)
+TREASURY_ADDRESS=$(grep VITE_TREASURY_ADDRESS frontend/.env.local | cut -d= -f2)
 
 echo "==> Seeding demo data (four departments, projects, tenders, reports)..."
 cd contracts
 REGISTRY_ADDRESS="$REGISTRY_ADDRESS" \
 LEDGER_ADDRESS="$LEDGER_ADDRESS" \
 TENDER_ADDRESS="$TENDER_ADDRESS" \
+TREASURY_ADDRESS="$TREASURY_ADDRESS" \
   forge script script/SeedDemo.s.sol \
   --rpc-url "$RPC_URL" \
   --broadcast \
@@ -60,9 +62,10 @@ node scripts/sync-abi.mjs
 
 echo ""
 echo "Deployment complete."
-echo "GovRegistry:   $REGISTRY_ADDRESS"
-echo "ProjectLedger: $LEDGER_ADDRESS"
-echo "Tender:        $TENDER_ADDRESS"
+echo "GovRegistry:       $REGISTRY_ADDRESS"
+echo "ProjectLedger:     $LEDGER_ADDRESS"
+echo "Tender:            $TENDER_ADDRESS"
+echo "ReportingTreasury: $TREASURY_ADDRESS (funded with 5 test ETH for sponsoring citizen reports)"
 echo ""
 echo "All demo accounts come from anvil's default mnemonic. In MetaMask,"
 echo "import any of the private keys anvil printed on startup:"
@@ -71,7 +74,9 @@ echo "  Account 1 / 2         Infrastructure department head / official"
 echo "  Account 3 / 4         Health department head / official"
 echo "  Account 5 / 6         Education department head / official"
 echo "  Account 7 / 8         Water Supply department head / official"
-echo "  Account 9             Ordinary citizen (no role)"
+echo "  Account 9             Ordinary citizen (no role, no ETH needed to report)"
 echo "  Account 10 / 11 / 12  Vendors that bid on tenders (no role)"
+echo "  Account 13            Relayer (used by ./scripts/start-relayer.sh)"
 echo ""
-echo "Now run ./scripts/dev.sh to start the frontend."
+echo "Now run ./scripts/start-relayer.sh (in its own terminal) so citizen"
+echo "reports can be gas-sponsored, then ./scripts/dev.sh to start the frontend."

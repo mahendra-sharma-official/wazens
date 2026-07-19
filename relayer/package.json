@@ -1,0 +1,13 @@
+{
+  "name": "govledger-relayer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A small local relayer that submits gas-sponsored citizen reports on behalf of a signed request, reimbursed by ReportingTreasury. For local prototype use only.",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "ethers": "^6.13.0"
+  }
+}

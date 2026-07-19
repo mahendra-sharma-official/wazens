@@ -23,5 +23,10 @@ cd frontend
 npm install
 cd ..
 
+echo "==> Installing relayer dependencies..."
+cd relayer
+npm install
+cd ..
+
 echo ""
 echo "Setup complete. Next, run ./scripts/run-local.sh"

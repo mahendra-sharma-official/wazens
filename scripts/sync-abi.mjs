@@ -12,6 +12,7 @@ const contracts = [
   { name: "GovRegistry", outFile: "GovRegistry.sol/GovRegistry.json", genFile: "GovRegistryAbi.json" },
   { name: "ProjectLedger", outFile: "ProjectLedger.sol/ProjectLedger.json", genFile: "ProjectLedgerAbi.json" },
   { name: "Tender", outFile: "Tender.sol/Tender.json", genFile: "TenderAbi.json" },
+  { name: "ReportingTreasury", outFile: "ReportingTreasury.sol/ReportingTreasury.json", genFile: "ReportingTreasuryAbi.json" },
 ];
 
 for (const c of contracts) {

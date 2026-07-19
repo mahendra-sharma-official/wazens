@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { getReadLedger, getReadRegistry, getWriteLedger, ProjectStatus } from "../lib/contracts.js";
 import { useWallet } from "../context/WalletContext.jsx";
 import { useAuthorization } from "../hooks/useAuthorization.js";
@@ -10,6 +10,7 @@ import { MilestoneForm } from "./MilestoneForm.jsx";
 import { SpendingForm } from "./SpendingForm.jsx";
 import { ReportForm } from "./ReportForm.jsx";
 import { ReportStatusControl, REPORT_STATUS_LABELS } from "./ReportStatusControl.jsx";
+import { ChangeResponsibleOfficialControl } from "./ChangeResponsibleOfficialControl.jsx";
 import { Notice } from "./Notice.jsx";
 import { shortAddress, formatTimestamp, formatDateTime, formatBudget } from "../lib/format.js";
 
@@ -114,7 +115,9 @@ export function ProjectDetail({ mode = "public" }) {
         <dl className="fact-grid">
           <div>
             <dt>Responsible official</dt>
-            <dd className="mono">{project.responsibleOfficial}</dd>
+            <dd className="mono">
+              <Link to={`/officials/${project.responsibleOfficial}`}>{project.responsibleOfficial}</Link>
+            </dd>
           </div>
           <div>
             <dt>Registered by</dt>
@@ -149,6 +152,13 @@ export function ProjectDetail({ mode = "public" }) {
               </select>
             </label>
             <Notice status={statusTx.status} message={statusTx.message} />
+
+            <ChangeResponsibleOfficialControl
+              projectId={projectId}
+              departmentId={Number(project.departmentId)}
+              currentOfficial={project.responsibleOfficial}
+              onChanged={refresh}
+            />
           </div>
         )}
       </div>

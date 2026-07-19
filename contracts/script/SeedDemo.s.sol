@@ -5,6 +5,7 @@ import "forge-std/Script.sol";
 import "../src/GovRegistry.sol";
 import "../src/ProjectLedger.sol";
 import "../src/Tender.sol";
+import "../src/ReportingTreasury.sol";
 
 /// @notice Populates freshly deployed contracts with a varied demo
 ///         dataset: four departments, a project and a tender in each
@@ -32,10 +33,12 @@ contract SeedDemo is Script {
         address registryAddr = vm.envAddress("REGISTRY_ADDRESS");
         address ledgerAddr = vm.envAddress("LEDGER_ADDRESS");
         address tenderAddr = vm.envAddress("TENDER_ADDRESS");
+        address treasuryAddr = vm.envAddress("TREASURY_ADDRESS");
 
         GovRegistry registry = GovRegistry(registryAddr);
         ProjectLedger ledger = ProjectLedger(ledgerAddr);
         Tender tender = Tender(tenderAddr);
+        ReportingTreasury treasury = ReportingTreasury(payable(treasuryAddr));
 
         uint256 adminKey = _key(0);
 
@@ -55,6 +58,7 @@ contract SeedDemo is Script {
         uint256 vendorAKey = _key(10);
         uint256 vendorBKey = _key(11);
         uint256 vendorCKey = _key(12);
+        uint256 relayerKey = _key(13);
 
         string[4] memory deptNames = [
             "Ministry of Infrastructure",
@@ -68,15 +72,27 @@ contract SeedDemo is Script {
             "Principal Bikash Karki",
             "Engineer Sunita Magar"
         ];
+        string[4] memory headNames = [
+            "Secretary Kamal Adhikari",
+            "Secretary Bina Gurung",
+            "Secretary Ramesh Poudel",
+            "Secretary Sabina Rai"
+        ];
 
         uint256[4] memory deptIds;
         vm.startBroadcast(adminKey);
         for (uint256 i = 0; i < 4; i++) {
-            deptIds[i] = registry.createDepartment(deptNames[i], headAddrs[i]);
+            deptIds[i] = registry.createDepartment(deptNames[i], headAddrs[i], headNames[i]);
         }
+        // Demonstrates that a department head is not the only one who
+        // can staff a department: the super admin can register a
+        // department's first official in the very same session it was
+        // created in, useful when a new department is being stood up
+        // and its head hasn't logged in yet.
+        registry.addOfficial(officialAddrs[3], officialNames[3], deptIds[3]);
         vm.stopBroadcast();
 
-        for (uint256 i = 0; i < 4; i++) {
+        for (uint256 i = 0; i < 3; i++) {
             vm.broadcast(headKeys[i]);
             registry.addOfficial(officialAddrs[i], officialNames[i], deptIds[i]);
         }
@@ -129,9 +145,48 @@ contract SeedDemo is Script {
         vm.broadcast(officialKeys[1]);
         ledger.updateReportStatus(clinicProjectId, clinicReportIndex, ProjectLedger.ReportStatus.Resolved);
 
+        // A fourth report, filed the gasless way: the citizen only
+        // signs (done here with vm.sign standing in for a MetaMask
+        // signature request), and the relayer account submits and
+        // pays gas, then gets reimbursed by ReportingTreasury. This is
+        // exactly the flow relayer/server.mjs performs for real once
+        // it's running; seeding one here means the UI has a sponsored
+        // report to show even before you start the relayer.
+        uint256 waterProjectId = projectIdsFor(ledger, deptIds[3])[0];
+        string memory sponsoredComment = "No visible progress at the pipeline site since the tender was published.";
+        bytes memory sig = _signReport(citizenKey, vm.addr(citizenKey), address(ledger), waterProjectId, sponsoredComment, 0);
+        vm.broadcast(relayerKey);
+        treasury.sponsorReport(vm.addr(citizenKey), waterProjectId, sponsoredComment, sig);
+
         console.log("Infrastructure/Health/Education/Water department IDs:");
         console.log(deptIds[0], deptIds[1]);
         console.log(deptIds[2], deptIds[3]);
+    }
+
+    // ---- EIP-712 signing, mirrors ProjectLedger's CitizenReport type ----
+
+    bytes32 constant EIP712_DOMAIN_TYPEHASH =
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+    bytes32 constant REPORT_TYPEHASH =
+        keccak256("CitizenReport(address reporter,uint256 projectId,string comment,uint256 nonce)");
+
+    function _signReport(
+        uint256 signerKey,
+        address reporter,
+        address verifyingContract,
+        uint256 projectId,
+        string memory comment,
+        uint256 nonce
+    ) internal view returns (bytes memory) {
+        bytes32 domainSeparator = keccak256(
+            abi.encode(
+                EIP712_DOMAIN_TYPEHASH, keccak256(bytes("GovLedger")), keccak256(bytes("1")), block.chainid, verifyingContract
+            )
+        );
+        bytes32 structHash = keccak256(abi.encode(REPORT_TYPEHASH, reporter, projectId, keccak256(bytes(comment)), nonce));
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerKey, digest);
+        return abi.encodePacked(r, s, v);
     }
 
     function _seedInfrastructure(

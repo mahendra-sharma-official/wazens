@@ -1,17 +1,18 @@
 import { useState } from "react";
 import { useWallet } from "../context/WalletContext.jsx";
-import { getWriteLedger } from "../lib/contracts.js";
-import { useTxRunner } from "../hooks/useTxRunner.js";
+import { signAndRelayReport } from "../lib/relay.js";
 import { Notice } from "./Notice.jsx";
 
-// Open to any connected wallet, this is the "citizen reporting"
-// feature: a comment tied on chain to a project and the reporter's
-// address. No moderation or status workflow yet, that is intentionally
-// left as a later extension (see README).
+// Filing a report never costs the citizen anything: they sign an
+// EIP-712 message (a MetaMask "signature request", no transaction, no
+// gas, works with a zero balance wallet) and a local relayer submits
+// it on their behalf, reimbursed by ReportingTreasury. See
+// lib/relay.js and relayer/server.mjs.
 export function ReportForm({ projectId, onAdded }) {
   const { signer, address, connect } = useWallet();
-  const { status, message, run } = useTxRunner();
   const [comment, setComment] = useState("");
+  const [status, setStatus] = useState("idle");
+  const [message, setMessage] = useState("");
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -19,13 +20,17 @@ export function ReportForm({ projectId, onAdded }) {
       await connect();
       return;
     }
-    const ledger = getWriteLedger(signer);
-    const ok = await run(() => ledger.fileCitizenReport(projectId, comment), {
-      successMessage: "Report filed on chain.",
-    });
-    if (ok) {
+    setStatus("pending");
+    setMessage("Waiting for your signature (no gas, no transaction)...");
+    try {
+      await signAndRelayReport(signer, address, projectId, comment);
+      setStatus("success");
+      setMessage("Report filed, gas sponsored by the reporting treasury.");
       setComment("");
       onAdded?.();
+    } catch (err) {
+      setStatus("error");
+      setMessage(err.message || "Could not file that report.");
     }
   }
 
@@ -42,8 +47,9 @@ export function ReportForm({ projectId, onAdded }) {
         />
       </label>
       <button className="btn btn-outline" type="submit" disabled={status === "pending"}>
-        {!address ? "Connect wallet to report" : status === "pending" ? "Filing..." : "File report"}
+        {!address ? "Connect wallet to report" : status === "pending" ? "Signing..." : "File report (free)"}
       </button>
+      <p className="hint">Reporting is free. You only sign a message, the government's reporting fund covers gas.</p>
       <Notice status={status} message={message} />
     </form>
   );

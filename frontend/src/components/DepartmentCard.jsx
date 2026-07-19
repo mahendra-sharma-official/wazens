@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { getReadRegistry } from "../lib/contracts.js";
 import { shortAddress } from "../lib/format.js";
 
@@ -45,7 +46,10 @@ export function DepartmentCard({ department }) {
           <p className="eyebrow">Department {String(department.id)}</p>
           <h3>{department.name}</h3>
           <p className="hint">
-            Head: <span className="mono">{shortAddress(department.head)}</span>
+            Head:{" "}
+            <Link to={`/officials/${department.head}`}>
+              {department.headName || shortAddress(department.head)}
+            </Link>
           </p>
         </div>
         <button className="btn btn-outline" onClick={() => setExpanded((v) => !v)}>
@@ -70,7 +74,9 @@ export function DepartmentCard({ department }) {
               <tbody>
                 {officials.map((o) => (
                   <tr key={o.address}>
-                    <td>{o.name}</td>
+                    <td>
+                      <Link to={`/officials/${o.address}`}>{o.name}</Link>
+                    </td>
                     <td className="mono">{shortAddress(o.address)}</td>
                   </tr>
                 ))}

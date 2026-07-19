@@ -34,6 +34,9 @@ export function Header() {
         <NavLink to="/tenders" className={navClass}>
           Tenders
         </NavLink>
+        <NavLink to="/officials" className={navClass}>
+          Officials
+        </NavLink>
         <NavLink to="/departments" className={navClass}>
           Departments
         </NavLink>

@@ -22,7 +22,7 @@ contract ProjectLedgerTest is Test {
         ledger = new ProjectLedger(address(registry));
 
         vm.prank(admin);
-        deptId = registry.createDepartment("Ministry of Infrastructure", head);
+        deptId = registry.createDepartment("Ministry of Infrastructure", head, "Engineer Thapa Head");
 
         vm.prank(head);
         registry.addOfficial(official, "Engineer Thapa", deptId);
@@ -138,6 +138,79 @@ contract ProjectLedgerTest is Test {
         ProjectLedger.CitizenReport[] memory reports = ledger.getReports(projectId);
         assertEq(reports.length, 1);
         assertEq(reports[0].reporter, stranger);
+        assertFalse(reports[0].gasSponsored);
+    }
+
+    // ---- EIP-712 gasless reporting ----
+
+    bytes32 constant EIP712_DOMAIN_TYPEHASH =
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+    bytes32 constant REPORT_TYPEHASH =
+        keccak256("CitizenReport(address reporter,uint256 projectId,string comment,uint256 nonce)");
+
+    function _domainSeparator() internal view returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                EIP712_DOMAIN_TYPEHASH, keccak256(bytes("GovLedger")), keccak256(bytes("1")), block.chainid, address(ledger)
+            )
+        );
+    }
+
+    function _signReport(uint256 privateKey, address reporter, uint256 projectId, string memory comment, uint256 nonce)
+        internal
+        view
+        returns (bytes memory)
+    {
+        bytes32 structHash = keccak256(abi.encode(REPORT_TYPEHASH, reporter, projectId, keccak256(bytes(comment)), nonce));
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _domainSeparator(), structHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
+        return abi.encodePacked(r, s, v);
+    }
+
+    function test_FileCitizenReportBySignature() public {
+        vm.prank(head);
+        uint256 projectId = ledger.createProject("Bridge Build", "desc", deptId, official, 100 ether);
+
+        uint256 citizenKey = 0xB33F;
+        address citizen = vm.addr(citizenKey);
+        bytes memory sig = _signReport(citizenKey, citizen, projectId, "Signed report, no gas from me", 0);
+
+        // A relayer (any address, doesn't need to be citizen) submits it.
+        vm.prank(stranger);
+        uint256 reportIndex = ledger.fileCitizenReportBySignature(citizen, projectId, "Signed report, no gas from me", sig);
+
+        ProjectLedger.CitizenReport[] memory reports = ledger.getReports(projectId);
+        assertEq(reports[reportIndex].reporter, citizen);
+        assertTrue(reports[reportIndex].gasSponsored);
+        assertEq(ledger.reportNonces(citizen), 1);
+    }
+
+    function test_CannotReplaySignedReport() public {
+        vm.prank(head);
+        uint256 projectId = ledger.createProject("Bridge Build", "desc", deptId, official, 100 ether);
+
+        uint256 citizenKey = 0xB33F;
+        address citizen = vm.addr(citizenKey);
+        bytes memory sig = _signReport(citizenKey, citizen, projectId, "Report", 0);
+
+        ledger.fileCitizenReportBySignature(citizen, projectId, "Report", sig);
+
+        vm.expectRevert(bytes("ProjectLedger: invalid signature"));
+        ledger.fileCitizenReportBySignature(citizen, projectId, "Report", sig);
+    }
+
+    function test_CannotForgeSignedReportFromSomeoneElse() public {
+        vm.prank(head);
+        uint256 projectId = ledger.createProject("Bridge Build", "desc", deptId, official, 100 ether);
+
+        uint256 attackerKey = 0xBAD;
+        address victim = address(0x1234567890123456789012345678901234567890);
+
+        // Attacker signs, but claims to be the victim.
+        bytes memory sig = _signReport(attackerKey, victim, projectId, "Fake report", 0);
+
+        vm.expectRevert(bytes("ProjectLedger: invalid signature"));
+        ledger.fileCitizenReportBySignature(victim, projectId, "Fake report", sig);
     }
 
     function test_SetProjectStatus() public {

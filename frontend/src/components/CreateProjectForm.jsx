@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { parseEther } from "ethers";
 import { useWallet } from "../context/WalletContext.jsx";
 import { getReadRegistry, getWriteLedger } from "../lib/contracts.js";
+import { useDepartmentOfficials } from "../hooks/useDepartmentOfficials.js";
 import { useTxRunner } from "../hooks/useTxRunner.js";
 import { Notice } from "./Notice.jsx";
+import { shortAddress } from "../lib/format.js";
 
 export function CreateProjectForm({ onCreated, allowedDepartmentIds }) {
   const { signer } = useWallet();
@@ -16,6 +18,10 @@ export function CreateProjectForm({ onCreated, allowedDepartmentIds }) {
     responsibleOfficial: "",
     allocatedBudget: "",
   });
+
+  const { entries: officialOptions, loading: officialsLoading } = useDepartmentOfficials(
+    form.departmentId ? Number(form.departmentId) : undefined
+  );
 
   useEffect(() => {
     async function loadDepartments() {
@@ -35,6 +41,17 @@ export function CreateProjectForm({ onCreated, allowedDepartmentIds }) {
     }
     loadDepartments();
   }, [allowedDepartmentIds]);
+
+  // Whenever the available officials for the chosen department change,
+  // default the selection to the first one instead of leaving it
+  // pointed at an official from the previously selected department.
+  useEffect(() => {
+    if (officialOptions.length > 0) {
+      setForm((f) => ({ ...f, responsibleOfficial: officialOptions[0].address }));
+    } else {
+      setForm((f) => ({ ...f, responsibleOfficial: "" }));
+    }
+  }, [officialOptions]);
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -56,7 +73,7 @@ export function CreateProjectForm({ onCreated, allowedDepartmentIds }) {
       { successMessage: "Project created." }
     );
     if (ok) {
-      setForm((f) => ({ ...f, name: "", description: "", responsibleOfficial: "", allocatedBudget: "" }));
+      setForm((f) => ({ ...f, name: "", description: "", allocatedBudget: "" }));
       onCreated?.();
     }
   }
@@ -99,14 +116,20 @@ export function CreateProjectForm({ onCreated, allowedDepartmentIds }) {
       </label>
 
       <label>
-        Responsible official address
-        <input
-          value={form.responsibleOfficial}
-          onChange={(e) => update("responsibleOfficial", e.target.value)}
-          required
-          placeholder="0x..."
-          className="mono-input"
-        />
+        Responsible official
+        {officialsLoading ? (
+          <p className="hint">Loading officials...</p>
+        ) : officialOptions.length === 0 ? (
+          <p className="hint">This department has no officials yet, add one in Departments first.</p>
+        ) : (
+          <select value={form.responsibleOfficial} onChange={(e) => update("responsibleOfficial", e.target.value)}>
+            {officialOptions.map((o) => (
+              <option key={o.address} value={o.address}>
+                {o.name} ({o.role === "head" ? "department head" : "official"}) - {shortAddress(o.address)}
+              </option>
+            ))}
+          </select>
+        )}
       </label>
 
       <label>
@@ -120,7 +143,7 @@ export function CreateProjectForm({ onCreated, allowedDepartmentIds }) {
         />
       </label>
 
-      <button className="btn btn-primary" type="submit" disabled={status === "pending"}>
+      <button className="btn btn-primary" type="submit" disabled={status === "pending" || officialOptions.length === 0}>
         {status === "pending" ? "Submitting..." : "Register project"}
       </button>
       <Notice status={status} message={message} />

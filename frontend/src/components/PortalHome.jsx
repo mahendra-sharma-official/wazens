@@ -1,13 +1,29 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWallet } from "../context/WalletContext.jsx";
-import { getReadLedger, getReadRegistry, getReadTender } from "../lib/contracts.js";
-import { shortAddress } from "../lib/format.js";
+import { getReadLedger, getReadRegistry, getReadTender, getReadTreasury } from "../lib/contracts.js";
+import { shortAddress, formatBudget } from "../lib/format.js";
+import { FundTreasuryForm } from "./FundTreasuryForm.jsx";
 
 export function PortalHome() {
   const navigate = useNavigate();
   const { address, isSuperAdmin, myDepartments } = useWallet();
   const [stats, setStats] = useState(null);
+  const [treasuryBalance, setTreasuryBalance] = useState(null);
+  const [treasuryRefreshNonce, setTreasuryRefreshNonce] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadTreasury() {
+      const treasury = getReadTreasury();
+      const balance = await treasury.runner.provider.getBalance(await treasury.getAddress());
+      if (!cancelled) setTreasuryBalance(balance);
+    }
+    loadTreasury();
+    return () => {
+      cancelled = true;
+    };
+  }, [treasuryRefreshNonce]);
 
   useEffect(() => {
     let cancelled = false;
@@ -115,6 +131,15 @@ export function PortalHome() {
         <button className="btn btn-outline" onClick={() => navigate("/portal/departments")}>
           {isSuperAdmin ? "Manage departments" : "Manage officials"}
         </button>
+      </div>
+
+      <div className="panel treasury-panel">
+        <h3>Reporting treasury</h3>
+        <p className="hint">
+          Balance: {treasuryBalance !== null ? formatBudget(treasuryBalance) : "..."} - reimburses relayers who
+          submit gas-sponsored citizen reports, so the public never pays to report a concern.
+        </p>
+        <FundTreasuryForm onFunded={() => setTreasuryRefreshNonce((n) => n + 1)} />
       </div>
     </section>
   );

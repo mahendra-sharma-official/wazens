@@ -1,8 +1,9 @@
 import { Contract, JsonRpcProvider } from "ethers";
-import { REGISTRY_ADDRESS, LEDGER_ADDRESS, TENDER_ADDRESS, RPC_URL } from "./config.js";
+import { REGISTRY_ADDRESS, LEDGER_ADDRESS, TENDER_ADDRESS, TREASURY_ADDRESS, RPC_URL } from "./config.js";
 import GovRegistryAbi from "./generated/GovRegistryAbi.json";
 import ProjectLedgerAbi from "./generated/ProjectLedgerAbi.json";
 import TenderAbi from "./generated/TenderAbi.json";
+import ReportingTreasuryAbi from "./generated/ReportingTreasuryAbi.json";
 
 // A read only provider that talks directly to the local chain's RPC.
 // Used for all "everyone can view the ledger" reads, so the site works
@@ -27,6 +28,10 @@ export function getReadTender() {
   return new Contract(TENDER_ADDRESS, TenderAbi, getReadProvider());
 }
 
+export function getReadTreasury() {
+  return new Contract(TREASURY_ADDRESS, ReportingTreasuryAbi, getReadProvider());
+}
+
 // Writable instances, connected to the signer of whichever account is
 // active in MetaMask. Only used once a wallet is connected.
 export function getWriteRegistry(signer) {
@@ -39,6 +44,10 @@ export function getWriteLedger(signer) {
 
 export function getWriteTender(signer) {
   return new Contract(TENDER_ADDRESS, TenderAbi, signer);
+}
+
+export function getWriteTreasury(signer) {
+  return new Contract(TREASURY_ADDRESS, ReportingTreasuryAbi, signer);
 }
 
 export const ProjectStatus = ["Planned", "Ongoing", "Completed", "Cancelled"];

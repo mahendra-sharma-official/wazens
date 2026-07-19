@@ -8,10 +8,12 @@ export const RPC_URL = import.meta.env.VITE_RPC_URL || "http://127.0.0.1:8545";
 export const REGISTRY_ADDRESS = import.meta.env.VITE_REGISTRY_ADDRESS || "";
 export const LEDGER_ADDRESS = import.meta.env.VITE_LEDGER_ADDRESS || "";
 export const TENDER_ADDRESS = import.meta.env.VITE_TENDER_ADDRESS || "";
+export const TREASURY_ADDRESS = import.meta.env.VITE_TREASURY_ADDRESS || "";
+export const RELAYER_URL = import.meta.env.VITE_RELAYER_URL || "http://localhost:8787";
 export const NETWORK_NAME = import.meta.env.VITE_NETWORK_NAME || "GovLedger Local (Anvil)";
 
 export const CHAIN_ID_HEX = "0x" + CHAIN_ID.toString(16);
 
 export function configIsReady() {
-  return Boolean(REGISTRY_ADDRESS && LEDGER_ADDRESS && TENDER_ADDRESS);
+  return Boolean(REGISTRY_ADDRESS && LEDGER_ADDRESS && TENDER_ADDRESS && TREASURY_ADDRESS);
 }

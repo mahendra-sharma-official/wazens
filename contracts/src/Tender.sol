@@ -60,12 +60,12 @@ contract Tender {
     mapping(uint256 => uint256[]) private _departmentTenderIds;
 
     event TenderCreated(
-        uint256 indexed tenderId, uint256 indexed departmentId, string title, uint256 estimatedBudget, uint256 submissionDeadline
+        uint256 indexed tenderId, uint256 indexed departmentId, address indexed createdBy, string title, uint256 estimatedBudget, uint256 submissionDeadline
     );
-    event BidSubmitted(uint256 indexed tenderId, uint256 indexed bidIndex, address indexed bidder, uint256 amount);
-    event BiddingClosed(uint256 indexed tenderId, address closedBy);
-    event TenderAwarded(uint256 indexed tenderId, uint256 bidIndex, address indexed winner, uint256 amount, address awardedBy);
-    event TenderCancelled(uint256 indexed tenderId, address cancelledBy);
+    event BidSubmitted(uint256 indexed tenderId, address indexed bidder, uint256 bidIndex, uint256 amount);
+    event BiddingClosed(uint256 indexed tenderId, address indexed closedBy);
+    event TenderAwarded(uint256 indexed tenderId, address indexed winner, address indexed awardedBy, uint256 bidIndex, uint256 amount);
+    event TenderCancelled(uint256 indexed tenderId, address indexed cancelledBy);
 
     constructor(address registryAddress) {
         require(registryAddress != address(0), "Tender: zero registry address");
@@ -114,7 +114,7 @@ contract Tender {
 
         _departmentTenderIds[departmentId].push(tenderId);
 
-        emit TenderCreated(tenderId, departmentId, title, estimatedBudget, submissionDeadline);
+        emit TenderCreated(tenderId, departmentId, msg.sender, title, estimatedBudget, submissionDeadline);
     }
 
     /// @notice Open to any wallet, no registry check at all, the same
@@ -133,7 +133,7 @@ contract Tender {
         _bids[tenderId].push(Bid({bidder: msg.sender, amount: amount, proposal: proposal, timestamp: block.timestamp}));
         bidIndex = _bids[tenderId].length - 1;
 
-        emit BidSubmitted(tenderId, bidIndex, msg.sender, amount);
+        emit BidSubmitted(tenderId, msg.sender, bidIndex, amount);
     }
 
     function closeBidding(uint256 tenderId) external tenderExists(tenderId) {
@@ -162,7 +162,7 @@ contract Tender {
         t.awardedBidder = winningBid.bidder;
         t.awardedAmount = winningBid.amount;
 
-        emit TenderAwarded(tenderId, bidIndex, winningBid.bidder, winningBid.amount, msg.sender);
+        emit TenderAwarded(tenderId, winningBid.bidder, msg.sender, bidIndex, winningBid.amount);
     }
 
     function cancelTender(uint256 tenderId) external tenderExists(tenderId) {

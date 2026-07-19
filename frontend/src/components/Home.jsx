@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getReadLedger, getReadRegistry, ProjectStatus } from "../lib/contracts.js";
+import { getReadLedger, getReadRegistry, getReadTreasury, ProjectStatus } from "../lib/contracts.js";
 import { formatBudget } from "../lib/format.js";
 import { StatusStamp } from "./StatusStamp.jsx";
 import { BudgetBar } from "./BudgetBar.jsx";
@@ -8,6 +8,7 @@ import { BudgetBar } from "./BudgetBar.jsx";
 export function Home() {
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
+  const [treasury, setTreasury] = useState(null);
   const [recentProjects, setRecentProjects] = useState([]);
   const [departmentNames, setDepartmentNames] = useState({});
 
@@ -17,8 +18,15 @@ export function Home() {
     async function load() {
       const ledger = getReadLedger();
       const registry = getReadRegistry();
+      const treasuryContract = getReadTreasury();
 
-      const [deptCount, projCount] = await Promise.all([registry.getDepartmentCount(), ledger.getProjectCount()]);
+      const [deptCount, projCount, treasuryBalance, totalSponsored, reportsSponsoredCount] = await Promise.all([
+        registry.getDepartmentCount(),
+        ledger.getProjectCount(),
+        treasuryContract.runner.provider.getBalance(await treasuryContract.getAddress()),
+        treasuryContract.totalSponsored(),
+        treasuryContract.reportsSponsoredCount(),
+      ]);
       const projectIds = Array.from({ length: Number(projCount) }, (_, i) => i + 1);
       const projects = await Promise.all(projectIds.map((id) => ledger.getProject(id)));
 
@@ -47,6 +55,11 @@ export function Home() {
           allocatedTotal,
           spentTotal,
           byStatus,
+        });
+        setTreasury({
+          balance: treasuryBalance,
+          totalSponsored,
+          reportsSponsoredCount: Number(reportsSponsoredCount),
         });
         setDepartmentNames(names);
         setRecentProjects(projects.slice(-3).reverse());
@@ -108,6 +121,35 @@ export function Home() {
               {label}: {stats.byStatus[idx]}
             </span>
           ))}
+        </div>
+      )}
+
+      {treasury && (
+        <div className="panel treasury-panel">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Reporting is free</p>
+              <h3>Citizen reporting treasury</h3>
+              <p className="hint">
+                Filing a report never costs you gas. This publicly funded balance reimburses whoever relays your
+                signed report on your behalf.
+              </p>
+            </div>
+          </div>
+          <div className="stat-grid">
+            <div className="stat-card stat-card-static">
+              <p className="stat-value">{formatBudget(treasury.balance)}</p>
+              <p className="stat-label">Current balance</p>
+            </div>
+            <div className="stat-card stat-card-static">
+              <p className="stat-value">{formatBudget(treasury.totalSponsored)}</p>
+              <p className="stat-label">Spent sponsoring reports</p>
+            </div>
+            <div className="stat-card stat-card-static">
+              <p className="stat-value">{treasury.reportsSponsoredCount}</p>
+              <p className="stat-label">Reports sponsored</p>
+            </div>
+          </div>
         </div>
       )}
 

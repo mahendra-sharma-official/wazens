@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./interfaces/IGovRegistry.sol";
 
 /// @title ProjectLedger
@@ -10,7 +12,16 @@ import "./interfaces/IGovRegistry.sol";
 ///         GovRegistry for that specific project's department, so
 ///         there is always a clear, on-chain trail of who is
 ///         responsible and who recorded what.
-contract ProjectLedger {
+///
+///         Citizen reports are the one exception: filing one never
+///         requires the reporter to hold any ETH. `fileCitizenReport`
+///         still works for anyone willing to pay their own gas, but
+///         `fileCitizenReportBySignature` lets a citizen sign an
+///         EIP-712 message (free, no transaction) and have any relayer
+///         submit it on their behalf; see ReportingTreasury.sol for
+///         the contract that reimburses that relayer's gas from a
+///         dedicated, publicly inspectable government-funded balance.
+contract ProjectLedger is EIP712 {
     enum ProjectStatus {
         Planned,
         Ongoing,
@@ -51,9 +62,7 @@ contract ProjectLedger {
     /// @notice A report's lifecycle. Open is the default state for any
     ///         freshly filed report. UnderReview signals an official has
     ///         seen it and is looking into it. Resolved and Dismissed
-    ///         are the two ways a report gets closed out, kept separate
-    ///         so the public can see the difference between "this was
-    ///         acted on" and "this was not considered valid".
+    ///         are the two ways a report gets closed out.
     enum ReportStatus {
         Open,
         UnderReview,
@@ -68,6 +77,7 @@ contract ProjectLedger {
         ReportStatus status;
         address triagedBy;
         uint256 triagedAt;
+        bool gasSponsored;
     }
 
     IGovRegistry public immutable registry;
@@ -78,11 +88,15 @@ contract ProjectLedger {
     mapping(uint256 => Milestone[]) private _milestones;
     mapping(uint256 => SpendingRecord[]) private _spendingRecords;
     mapping(uint256 => CitizenReport[]) private _reports;
-
-    // Lets the frontend (and any future module) look up "which projects
-    // belong to this department" directly instead of scanning every
-    // project id and checking its departmentId one by one.
     mapping(uint256 => uint256[]) private _departmentProjectIds;
+
+    /// @dev Replay protection for signature based reports, one counter
+    ///      per reporter address, independent of which project they're
+    ///      reporting on.
+    mapping(address => uint256) public reportNonces;
+
+    bytes32 private constant REPORT_TYPEHASH =
+        keccak256("CitizenReport(address reporter,uint256 projectId,string comment,uint256 nonce)");
 
     event ProjectCreated(
         uint256 indexed projectId,
@@ -91,17 +105,27 @@ contract ProjectLedger {
         string name,
         uint256 allocatedBudget
     );
-    event ProjectStatusChanged(uint256 indexed projectId, ProjectStatus oldStatus, ProjectStatus newStatus, address changedBy);
-    event ResponsibleOfficialChanged(uint256 indexed projectId, address oldOfficial, address newOfficial, address changedBy);
-    event MilestoneAdded(uint256 indexed projectId, uint256 indexed milestoneIndex, string description, uint256 targetDate);
-    event MilestoneCompleted(uint256 indexed projectId, uint256 indexed milestoneIndex, string evidenceURI, address completedBy);
-    event SpendingRecorded(uint256 indexed projectId, uint256 amount, string purpose, address indexed recipient, address indexed recordedBy);
-    event CitizenReportFiled(uint256 indexed projectId, address indexed reporter, string comment);
+    event ProjectStatusChanged(
+        uint256 indexed projectId, address indexed changedBy, ProjectStatus oldStatus, ProjectStatus newStatus
+    );
+    event ResponsibleOfficialChanged(
+        uint256 indexed projectId, address indexed oldOfficial, address indexed newOfficial, address changedBy
+    );
+    event MilestoneAdded(
+        uint256 indexed projectId, address indexed addedBy, uint256 milestoneIndex, string description, uint256 targetDate
+    );
+    event MilestoneCompleted(
+        uint256 indexed projectId, address indexed completedBy, uint256 milestoneIndex, string evidenceURI
+    );
+    event SpendingRecorded(
+        uint256 indexed projectId, address indexed recipient, address indexed recordedBy, uint256 amount, string purpose
+    );
+    event CitizenReportFiled(uint256 indexed projectId, address indexed reporter, bool gasSponsored, string comment);
     event ReportStatusChanged(
-        uint256 indexed projectId, uint256 indexed reportIndex, ReportStatus oldStatus, ReportStatus newStatus, address changedBy
+        uint256 indexed projectId, address indexed changedBy, uint256 reportIndex, ReportStatus oldStatus, ReportStatus newStatus
     );
 
-    constructor(address registryAddress) {
+    constructor(address registryAddress) EIP712("GovLedger", "1") {
         require(registryAddress != address(0), "ProjectLedger: zero registry address");
         registry = IGovRegistry(registryAddress);
     }
@@ -161,7 +185,7 @@ contract ProjectLedger {
         require(registry.isAuthorizedForDepartment(msg.sender, p.departmentId), "ProjectLedger: not authorized for department");
         ProjectStatus old = p.status;
         p.status = newStatus;
-        emit ProjectStatusChanged(projectId, old, newStatus, msg.sender);
+        emit ProjectStatusChanged(projectId, msg.sender, old, newStatus);
     }
 
     function changeResponsibleOfficial(uint256 projectId, address newOfficial) external projectExists(projectId) {
@@ -196,7 +220,7 @@ contract ProjectLedger {
             })
         );
         milestoneIndex = _milestones[projectId].length - 1;
-        emit MilestoneAdded(projectId, milestoneIndex, description, targetDate);
+        emit MilestoneAdded(projectId, msg.sender, milestoneIndex, description, targetDate);
     }
 
     function completeMilestone(uint256 projectId, uint256 milestoneIndex, string calldata evidenceURI)
@@ -215,7 +239,7 @@ contract ProjectLedger {
         m.evidenceURI = evidenceURI;
         m.completedBy = msg.sender;
 
-        emit MilestoneCompleted(projectId, milestoneIndex, evidenceURI, msg.sender);
+        emit MilestoneCompleted(projectId, msg.sender, milestoneIndex, evidenceURI);
     }
 
     function recordSpending(uint256 projectId, uint256 amount, string calldata purpose, address recipient)
@@ -238,31 +262,64 @@ contract ProjectLedger {
             })
         );
 
-        emit SpendingRecorded(projectId, amount, purpose, recipient, msg.sender);
+        emit SpendingRecorded(projectId, recipient, msg.sender, amount, purpose);
     }
 
-    /// @notice Anyone can file a report/comment against a project. No
-    ///         restriction on caller. The report starts life as Open,
-    ///         see updateReportStatus for how officials triage it.
+    // ---------------------------------------------------------------
+    // Citizen reports: the only actions in this contract open to
+    // absolutely anyone, no registry role required.
+    // ---------------------------------------------------------------
+
+    /// @notice File a report paying your own gas.
     function fileCitizenReport(uint256 projectId, string calldata comment) external projectExists(projectId) returns (uint256 reportIndex) {
+        reportIndex = _pushReport(projectId, msg.sender, comment, false);
+    }
+
+    /// @notice File a report on behalf of `reporter`, gas paid by
+    ///         whoever calls this (typically ReportingTreasury on
+    ///         behalf of a relayer). `reporter` never signs or sends a
+    ///         transaction themselves, only an off-chain EIP-712
+    ///         signature proving they authored this exact report.
+    ///         Callable by anyone, the signature is what authenticates
+    ///         the reporter, not msg.sender.
+    function fileCitizenReportBySignature(
+        address reporter,
+        uint256 projectId,
+        string calldata comment,
+        bytes calldata signature
+    ) external projectExists(projectId) returns (uint256 reportIndex) {
+        uint256 nonce = reportNonces[reporter];
+        bytes32 structHash = keccak256(abi.encode(REPORT_TYPEHASH, reporter, projectId, keccak256(bytes(comment)), nonce));
+        bytes32 digest = _hashTypedDataV4(structHash);
+        address recovered = ECDSA.recover(digest, signature);
+        require(recovered == reporter, "ProjectLedger: invalid signature");
+
+        reportNonces[reporter] = nonce + 1;
+        reportIndex = _pushReport(projectId, reporter, comment, true);
+    }
+
+    function _pushReport(uint256 projectId, address reporter, string calldata comment, bool gasSponsored)
+        private
+        returns (uint256 reportIndex)
+    {
         _reports[projectId].push(
             CitizenReport({
-                reporter: msg.sender,
+                reporter: reporter,
                 comment: comment,
                 timestamp: block.timestamp,
                 status: ReportStatus.Open,
                 triagedBy: address(0),
-                triagedAt: 0
+                triagedAt: 0,
+                gasSponsored: gasSponsored
             })
         );
         reportIndex = _reports[projectId].length - 1;
-        emit CitizenReportFiled(projectId, msg.sender, comment);
+        emit CitizenReportFiled(projectId, reporter, gasSponsored, comment);
     }
 
     /// @notice Lets an official (or head, or admin) of a project's
     ///         department move a citizen report through its lifecycle:
-    ///         mark it under review, then resolved or dismissed. This
-    ///         is what an "Official Portal" report queue is built on.
+    ///         mark it under review, then resolved or dismissed.
     function updateReportStatus(uint256 projectId, uint256 reportIndex, ReportStatus newStatus)
         external
         projectExists(projectId)
@@ -277,7 +334,23 @@ contract ProjectLedger {
         r.triagedBy = msg.sender;
         r.triagedAt = block.timestamp;
 
-        emit ReportStatusChanged(projectId, reportIndex, old, newStatus, msg.sender);
+        emit ReportStatusChanged(projectId, msg.sender, reportIndex, old, newStatus);
+    }
+
+    /// @notice The EIP-712 domain separator's name/version plus this
+    ///         contract's address and chain id are what MetaMask shows
+    ///         (and what a signature is scoped to) when a citizen signs
+    ///         a report. Exposed so the frontend can build the exact
+    ///         same typed data structure without guessing at it.
+    function eip712Domain_()
+        external
+        view
+        returns (string memory name, string memory version, uint256 chainId, address verifyingContract)
+    {
+        name = "GovLedger";
+        version = "1";
+        chainId = block.chainid;
+        verifyingContract = address(this);
     }
 
     // ---------------------------------------------------------------

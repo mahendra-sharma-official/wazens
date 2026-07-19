@@ -8,6 +8,8 @@ import { Projects } from "./components/Projects.jsx";
 import { ProjectDetail } from "./components/ProjectDetail.jsx";
 import { Tenders } from "./components/Tenders.jsx";
 import { TenderDetail } from "./components/TenderDetail.jsx";
+import { Officials } from "./components/Officials.jsx";
+import { OfficialProfile } from "./components/OfficialProfile.jsx";
 import { PortalHome } from "./components/PortalHome.jsx";
 import { PortalDepartments } from "./components/PortalDepartments.jsx";
 import { PortalProjects } from "./components/PortalProjects.jsx";
@@ -44,6 +46,8 @@ export default function App() {
             <Route path="/projects/:id" element={<ProjectDetail mode="public" />} />
             <Route path="/tenders" element={<Tenders />} />
             <Route path="/tenders/:id" element={<TenderDetail mode="public" />} />
+            <Route path="/officials" element={<Officials />} />
+            <Route path="/officials/:address" element={<OfficialProfile />} />
             <Route path="/departments" element={<Departments />} />
           </Route>
 

@@ -20,8 +20,8 @@ for (const tx of broadcast.transactions) {
   }
 }
 
-if (!byName.GovRegistry || !byName.ProjectLedger || !byName.Tender) {
-  console.error("Could not find GovRegistry / ProjectLedger / Tender addresses in the broadcast log.");
+if (!byName.GovRegistry || !byName.ProjectLedger || !byName.Tender || !byName.ReportingTreasury) {
+  console.error("Could not find GovRegistry / ProjectLedger / Tender / ReportingTreasury addresses in the broadcast log.");
   process.exit(1);
 }
 
@@ -32,6 +32,8 @@ VITE_NETWORK_NAME=GovLedger Local (Anvil)
 VITE_REGISTRY_ADDRESS=${byName.GovRegistry}
 VITE_LEDGER_ADDRESS=${byName.ProjectLedger}
 VITE_TENDER_ADDRESS=${byName.Tender}
+VITE_TREASURY_ADDRESS=${byName.ReportingTreasury}
+VITE_RELAYER_URL=http://localhost:8787
 `;
 
 writeFileSync(path.join(rootDir, "frontend", ".env.local"), envContent);

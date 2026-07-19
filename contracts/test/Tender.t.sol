@@ -23,7 +23,7 @@ contract TenderTest is Test {
         tender = new Tender(address(registry));
 
         vm.prank(admin);
-        deptId = registry.createDepartment("Ministry of Infrastructure", head);
+        deptId = registry.createDepartment("Ministry of Infrastructure", head, "Engineer Thapa Head");
 
         vm.prank(head);
         registry.addOfficial(official, "Engineer Thapa", deptId);
