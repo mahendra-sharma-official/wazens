@@ -138,7 +138,7 @@ export function CreateProjectForm({ onCreated, allowedDepartmentIds }) {
           value={form.allocatedBudget}
           onChange={(e) => update("allocatedBudget", e.target.value)}
           required
-          placeholder="e.g. 1000"
+          placeholder="e.g. 1000 Units"
           inputMode="decimal"
         />
       </label>
