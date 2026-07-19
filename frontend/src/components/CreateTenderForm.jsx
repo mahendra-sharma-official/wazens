@@ -126,7 +126,7 @@ export function CreateTenderForm({ onCreated, allowedDepartmentIds }) {
           value={form.estimatedBudget}
           onChange={(e) => update("estimatedBudget", e.target.value)}
           required
-          placeholder="e.g. 300"
+          placeholder="e.g. 300 Units"
           inputMode="decimal"
         />
       </label>
