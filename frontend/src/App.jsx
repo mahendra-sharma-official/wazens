@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { WalletProvider } from "./context/WalletContext.jsx";
+import { CurrencyRerenderBoundary } from "./context/CurrencyRerenderBoundary.jsx";
 import { PublicLayout } from "./components/PublicLayout.jsx";
 import { PortalLayout } from "./components/PortalLayout.jsx";
 import { Home } from "./components/Home.jsx";
@@ -39,30 +40,32 @@ export default function App() {
   return (
     <WalletProvider>
       <BrowserRouter>
-        <Routes>
-          <Route element={<PublicLayout />}>
-            <Route path="/" element={<Home />} />
-            <Route path="/projects" element={<Projects />} />
-            <Route path="/projects/:id" element={<ProjectDetail mode="public" />} />
-            <Route path="/tenders" element={<Tenders />} />
-            <Route path="/tenders/:id" element={<TenderDetail mode="public" />} />
-            <Route path="/officials" element={<Officials />} />
-            <Route path="/officials/:address" element={<OfficialProfile />} />
-            <Route path="/departments" element={<Departments />} />
-          </Route>
+        <CurrencyRerenderBoundary>
+          <Routes>
+            <Route element={<PublicLayout />}>
+              <Route path="/" element={<Home />} />
+              <Route path="/projects" element={<Projects />} />
+              <Route path="/projects/:id" element={<ProjectDetail mode="public" />} />
+              <Route path="/tenders" element={<Tenders />} />
+              <Route path="/tenders/:id" element={<TenderDetail mode="public" />} />
+              <Route path="/officials" element={<Officials />} />
+              <Route path="/officials/:address" element={<OfficialProfile />} />
+              <Route path="/departments" element={<Departments />} />
+            </Route>
 
-          <Route path="/portal" element={<PortalLayout />}>
-            <Route index element={<PortalHome />} />
-            <Route path="projects" element={<PortalProjects />} />
-            <Route path="projects/:id" element={<ProjectDetail mode="portal" />} />
-            <Route path="tenders" element={<PortalTenders />} />
-            <Route path="tenders/:id" element={<TenderDetail mode="portal" />} />
-            <Route path="reports" element={<PortalReports />} />
-            <Route path="departments" element={<PortalDepartments />} />
-          </Route>
+            <Route path="/portal" element={<PortalLayout />}>
+              <Route index element={<PortalHome />} />
+              <Route path="projects" element={<PortalProjects />} />
+              <Route path="projects/:id" element={<ProjectDetail mode="portal" />} />
+              <Route path="tenders" element={<PortalTenders />} />
+              <Route path="tenders/:id" element={<TenderDetail mode="portal" />} />
+              <Route path="reports" element={<PortalReports />} />
+              <Route path="departments" element={<PortalDepartments />} />
+            </Route>
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </CurrencyRerenderBoundary>
       </BrowserRouter>
     </WalletProvider>
   );

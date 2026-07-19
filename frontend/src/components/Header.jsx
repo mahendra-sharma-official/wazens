@@ -1,6 +1,7 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { ConnectButton } from "./ConnectButton.jsx";
 import { useWallet } from "../context/WalletContext.jsx";
+import { CurrencyToggle } from "./CurrencyToggle.jsx";
 
 function navClass({ isActive }) {
   return isActive ? "nav-link nav-link-active" : "nav-link";
@@ -49,7 +50,7 @@ export function Header() {
           </NavLink>
         )}
       </nav>
-
+        <CurrencyToggle/>
       <ConnectButton />
     </header>
   );

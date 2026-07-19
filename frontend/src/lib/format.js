@@ -1,4 +1,5 @@
 import { formatEther } from "ethers";
+import { formatCurrencyValue } from "./currency.js";
 
 export function shortAddress(address) {
   if (!address) return "";
@@ -6,13 +7,11 @@ export function shortAddress(address) {
 }
 
 export function formatBudget(value) {
-  // Budgets are stored as wei-scale numbers on chain purely so we can
-  // reuse ether's 18 decimal formatting as a stand in for a generic
-  // currency amount in this prototype. Swap this for your real
-  // currency's decimals when you move past the demo stage.
-  return Number(formatEther(value)).toLocaleString(undefined, {
-    maximumFractionDigits: 2,
-  });
+  // Delegates to lib/currency.js, which shows the same underlying
+  // on-chain value either as NRS (default, friendlier for a Nepal
+  // audience) or as the raw on-chain unit, based on the user's
+  // toggle (see components/CurrencyToggle.jsx).
+  return formatCurrencyValue(value);
 }
 
 export function formatTimestamp(unixSeconds) {
