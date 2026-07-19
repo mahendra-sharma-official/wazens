@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { getReadRegistry } from "../lib/contracts.js";
 import { shortAddress } from "../lib/format.js";
 
@@ -10,6 +10,11 @@ import { shortAddress } from "../lib/format.js";
 // its own browsable, searchable directory.
 export function Officials() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  const departmentFilter = searchParams.get("department");
+  const departmentName = searchParams.get("name");
+
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -56,21 +61,51 @@ export function Officials() {
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
+
     return rows.filter((r) => {
-      if (!showInactive && !r.active) return false;
-      if (term) {
-        const haystack = `${r.name} ${r.address} ${r.departmentName}`.toLowerCase();
-        if (!haystack.includes(term)) return false;
+      if (!showInactive && !r.active) {
+        return false;
       }
+
+      if (
+        departmentFilter &&
+        Number(r.departmentId) !== Number(departmentFilter)
+      ) {
+        return false;
+      }
+
+      if (term) {
+        const haystack =
+          `${r.name} ${r.address} ${r.departmentName}`.toLowerCase();
+
+        if (!haystack.includes(term)) {
+          return false;
+        }
+      }
+
       return true;
     });
-  }, [rows, search, showInactive]);
+  }, [rows, search, showInactive, departmentFilter]);
 
   return (
     <section className="page">
       <div className="page-heading">
-        <h2>Officials registry</h2>
-        <p>Every department head and official recognized on chain, with a public profile and activity history each.</p>
+        <div className="page-title-group">
+          <h2>
+            {departmentName || "Officials registry"}
+          </h2>
+
+          {departmentFilter && (
+            <p className="hint">
+              Department #{departmentFilter}
+            </p>
+          )}
+        </div>
+        <p className="page-description">
+          {departmentFilter
+            ? `Browse all active officials and department leadership serving under ${departmentName}.`
+            : "Every department head and official recognized on chain, with a public profile and activity history each."}
+        </p>
       </div>
 
       <div className="filter-bar">
