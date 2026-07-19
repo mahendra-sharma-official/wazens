@@ -3,56 +3,33 @@ pragma solidity ^0.8.24;
 
 import "./ProjectLedger.sol";
 
-/// @title ReportingTreasury
-/// @notice A dedicated, publicly inspectable pool of ETH set aside for
-///         exactly one purpose: reimbursing whoever relays a citizen's
-///         signed report on their behalf, so an ordinary member of the
-///         public never needs their own gas to participate in the
-///         transparency ledger. The flow:
-///
-///         1. A citizen signs an EIP-712 "CitizenReport" message with
-///            their wallet. This costs no gas and sends no
-///            transaction, MetaMask just shows a signature request.
-///         2. That signature, together with the report content, is
-///            handed to a relayer (see relayer/ in this repo for a
-///            small local one). Anyone can run a relayer, it does not
-///            need to be trusted with anything beyond gas money.
-///         3. The relayer calls sponsorReport, paying gas for the
-///            actual transaction out of their own balance up front.
-///         4. This contract calls into ProjectLedger to verify the
-///            signature and record the report under the citizen's own
-///            address (not the relayer's), then reimburses the
-///            relayer's gas cost from its own ETH balance.
-///
-///         Every top-up, every reimbursement, and the running balance
-///         are all just normal ETH transfers and public contract
-///         state, so "how much has the government spent sponsoring
-///         citizen participation" is always visible on chain.
+// Creating the reporting treasury/ Database contract (Class)
 contract ReportingTreasury {
+    // Declaring a public immutable ledger of type ProjectLedger contract.
     ProjectLedger public immutable ledger;
 
+    // Declaring necessary variables for tracking records of sponsored reports.
     uint256 public totalSponsored;
     uint256 public reportsSponsoredCount;
 
-    /// @notice Minimum time between sponsored reports from the same reporter.
+    // max reporting time between two reports from the same acc.
     uint256 public constant REPORT_COOLDOWN = 1 hours;
 
-    /// @notice Maximum treasury reimbursement a single reporter can receive.
+    // max sponsorship that a reporter can receive.
     uint256 public constant MAX_SPONSORED_PER_REPORTER = 0.02 ether;
 
-    /// @notice Timestamp of the last sponsored report for a reporter.
+    // last sponsored time (to check if it's lower than REPORT_COOLDOWN)
     mapping(address => uint256) public lastSponsoredReportAt;
 
-    /// @notice Total reimbursement received by a reporter.
+    // Total sponsorship received by the reporter.
     mapping(address => uint256) public sponsoredAmountByReporter;
 
-    /// @dev Small buffer added on top of measured gas, covering the
-    ///      base transaction cost (21000 gas) and the cost of this
-    ///      wrapper call itself, which gasleft() accounting inside the
-    ///      call cannot see.
+    // extra gas buffer to account for tx overhead and wrapper call costs.
     uint256 public constant GAS_OVERHEAD = 45000;
 
+    // events that get emitted on fulfillment of certain conditions (defined within functions).
     event Funded(address indexed from, uint256 amount);
+
     event ReportSponsored(
         uint256 indexed projectId,
         uint256 indexed reportIndex,
@@ -61,81 +38,103 @@ contract ReportingTreasury {
         uint256 refund
     );
 
+    // emitted when a reporter attempts to submit during cooldown.
     event ReporterCooldownTriggered(
         address indexed reporter,
         uint256 nextEligibleTime
     );
 
+    // emitted when a reporter reaches the sponsorship cap.
     event ReporterSponsorCapReached(
         address indexed reporter,
         uint256 totalSponsored
     );
 
+    // the actual constructor class for ReportingTreasury contract.
     constructor(address ledgerAddress) {
         require(
             ledgerAddress != address(0),
             "ReportingTreasury: zero ledger address"
         );
+
+        // also initializing the project ledger with the address passed.
         ledger = ProjectLedger(ledgerAddress);
     }
 
+    // can receive payments as it is declared as payable.
     receive() external payable {
         emit Funded(msg.sender, msg.value);
     }
 
+    // smth similar to the above one.
     function fund() external payable {
         emit Funded(msg.sender, msg.value);
     }
 
-    /// @notice Anyone can call this, it is the relayer's own signed
-    ///         Ethereum transaction, so they're already paying gas for
-    ///         it out of pocket. What makes this a "sponsored" report
-    ///         is that this contract pays that gas back to them
-    ///         immediately afterward.
+    // files the report and refunds the relayer for gas spent.
     function sponsorReport(
         address reporter,
         uint256 projectId,
         string calldata comment,
         bytes calldata signature
     ) external returns (uint256 reportIndex) {
+        // fetching the last sponsored report time for this reporter.
         uint256 lastReport = lastSponsoredReportAt[reporter];
 
+        // checking if the reporter is still on cooldown.
         require(
             block.timestamp >= lastReport + REPORT_COOLDOWN,
             "ReportingTreasury: reporter cooldown active"
         );
+
+        // storing gas left before the report is filed.
         uint256 startGas = gasleft();
 
+        // forwarding the signed report to the ledger.
         reportIndex = ledger.fileCitizenReportBySignature(
             reporter,
             projectId,
             comment,
             signature
         );
+
+        // updating the last sponsored report timestamp.
         lastSponsoredReportAt[reporter] = block.timestamp;
+
+        // calculating gas consumed by this operation.
         uint256 gasUsed = startGas - gasleft() + GAS_OVERHEAD;
+
+        // calculating refund amount based on gas used.
         uint256 refund = gasUsed * tx.gasprice;
 
+        // checking how much sponsorship allowance is left.
         uint256 remainingAllowance = MAX_SPONSORED_PER_REPORTER -
             sponsoredAmountByReporter[reporter];
 
+        // ensuring refund does not exceed reporter's sponsorship cap.
         if (refund > remainingAllowance) {
             refund = remainingAllowance;
         }
+
+        // ensuring refund does not exceed treasury balance.
         if (refund > address(this).balance) {
             refund = address(this).balance;
         }
 
+        // updating treasury statistics.
         totalSponsored += refund;
         reportsSponsoredCount += 1;
 
+        // updating total sponsorship received by the reporter.
         sponsoredAmountByReporter[reporter] += refund;
 
+        // sending refund to the relayer if any amount is due.
         if (refund > 0) {
             (bool sent, ) = payable(msg.sender).call{value: refund}("");
             require(sent, "ReportingTreasury: refund transfer failed");
         }
 
+        // emitting event for the sponsored report.
         emit ReportSponsored(
             projectId,
             reportIndex,

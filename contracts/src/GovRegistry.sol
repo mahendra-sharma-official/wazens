@@ -4,17 +4,17 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "./interfaces/IGovRegistry.sol";
 
-/// @title GovRegistry
-/// @notice The identity and permission layer of the transparency ledger,
-///         and the "official registry" the rest of the app reads from:
-///         every department, who heads it, and every address that has
-///         ever been registered as an official, including who added
-///         them and when, so that even a manual entry always has a
-///         clear accountable source.
+// Registry contract for managing departments and officials.
 contract GovRegistry is AccessControl, IGovRegistry {
-    bytes32 public constant DEPARTMENT_HEAD_ROLE = keccak256("DEPARTMENT_HEAD_ROLE");
-    bytes32 public constant OFFICIAL_ROLE = keccak256("OFFICIAL_ROLE");
+    // role assigned to department heads.
+    bytes32 public constant DEPARTMENT_HEAD_ROLE =
+        keccak256("DEPARTMENT_HEAD_ROLE");
 
+    // role assigned to government officials.
+    bytes32 public constant OFFICIAL_ROLE =
+        keccak256("OFFICIAL_ROLE");
+
+    // structure for storing department information.
     struct Department {
         uint256 id;
         string name;
@@ -23,6 +23,7 @@ contract GovRegistry is AccessControl, IGovRegistry {
         bool exists;
     }
 
+    // structure for storing official information.
     struct OfficialInfo {
         string name;
         uint256 departmentId;
@@ -33,82 +34,160 @@ contract GovRegistry is AccessControl, IGovRegistry {
         uint256 deactivatedAt;
     }
 
+    // counter for generating department ids.
     uint256 private _departmentCounter;
 
+    // stores departments by their id.
     mapping(uint256 => Department) private _departments;
+
+    // stores information about each official.
     mapping(address => OfficialInfo) private _officials;
+
+    // stores all officials belonging to a department.
     mapping(uint256 => address[]) private _departmentOfficials;
 
-    event DepartmentCreated(uint256 indexed departmentId, address indexed head, address indexed createdBy, string name);
-    event DepartmentHeadChanged(uint256 indexed departmentId, address indexed oldHead, address indexed newHead);
-    event OfficialAdded(address indexed official, uint256 indexed departmentId, address indexed addedBy, string name);
-    event OfficialDeactivated(address indexed official, uint256 indexed departmentId, address indexed deactivatedBy);
+    // events emitted whenever registry data changes.
+    event DepartmentCreated(
+        uint256 indexed departmentId,
+        address indexed head,
+        address indexed createdBy,
+        string name
+    );
 
+    event DepartmentHeadChanged(
+        uint256 indexed departmentId,
+        address indexed oldHead,
+        address indexed newHead
+    );
+
+    event OfficialAdded(
+        address indexed official,
+        uint256 indexed departmentId,
+        address indexed addedBy,
+        string name
+    );
+
+    event OfficialDeactivated(
+        address indexed official,
+        uint256 indexed departmentId,
+        address indexed deactivatedBy
+    );
+
+    // constructor for the GovRegistry contract.
     constructor(address admin) {
         require(admin != address(0), "GovRegistry: zero admin");
+
+        // granting admin role to the provided address.
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
 
+    // ensures caller is either the department head or an admin.
     modifier onlyDepartmentHeadOrAdmin(uint256 departmentId) {
-        require(_departments[departmentId].exists, "GovRegistry: department does not exist");
         require(
-            _departments[departmentId].head == msg.sender || hasRole(DEFAULT_ADMIN_ROLE, msg.sender),
+            _departments[departmentId].exists,
+            "GovRegistry: department does not exist"
+        );
+
+        require(
+            _departments[departmentId].head == msg.sender ||
+                hasRole(DEFAULT_ADMIN_ROLE, msg.sender),
             "GovRegistry: caller is not department head or admin"
         );
+
         _;
     }
 
-    // ---------------------------------------------------------------
-    // Admin actions: only the top level government admin (deployer, or
-    // whoever the admin role is later transferred to) can create
-    // departments and assign their heads. A head has a display name
-    // too, the same as officials do, so the public registry never has
-    // to show a head as a bare, nameless address.
-    // ---------------------------------------------------------------
+    // admin functions.
 
-    function createDepartment(string calldata name, address head, string calldata headName)
+    function createDepartment(
+        string calldata name,
+        address head,
+        string calldata headName
+    )
         external
         onlyRole(DEFAULT_ADMIN_ROLE)
         returns (uint256 departmentId)
     {
         require(head != address(0), "GovRegistry: zero head address");
+
+        // generating a new department id.
         _departmentCounter += 1;
         departmentId = _departmentCounter;
-        _departments[departmentId] =
-            Department({id: departmentId, name: name, head: head, headName: headName, exists: true});
+
+        // creating and storing the department.
+        _departments[departmentId] = Department({
+            id: departmentId,
+            name: name,
+            head: head,
+            headName: headName,
+            exists: true
+        });
+
+        // granting department head role.
         _grantRole(DEPARTMENT_HEAD_ROLE, head);
-        emit DepartmentCreated(departmentId, head, msg.sender, name);
+
+        emit DepartmentCreated(
+            departmentId,
+            head,
+            msg.sender,
+            name
+        );
     }
 
-    function changeDepartmentHead(uint256 departmentId, address newHead, string calldata newHeadName)
-        external
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
-        require(_departments[departmentId].exists, "GovRegistry: department does not exist");
-        require(newHead != address(0), "GovRegistry: zero head address");
+    function changeDepartmentHead(
+        uint256 departmentId,
+        address newHead,
+        string calldata newHeadName
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(
+            _departments[departmentId].exists,
+            "GovRegistry: department does not exist"
+        );
+
+        require(
+            newHead != address(0),
+            "GovRegistry: zero head address"
+        );
+
         address oldHead = _departments[departmentId].head;
+
+        // updating roles if the head changes.
         if (oldHead != newHead) {
             _revokeRole(DEPARTMENT_HEAD_ROLE, oldHead);
+
             _departments[departmentId].head = newHead;
+
             _grantRole(DEPARTMENT_HEAD_ROLE, newHead);
         }
+
+        // updating the head's display name.
         _departments[departmentId].headName = newHeadName;
-        emit DepartmentHeadChanged(departmentId, oldHead, newHead);
+
+        emit DepartmentHeadChanged(
+            departmentId,
+            oldHead,
+            newHead
+        );
     }
 
-    // ---------------------------------------------------------------
-    // Department head actions: a department head (or admin) manages
-    // the officials working under their department. Every addition is
-    // stamped with who added it and when, so a manually entered
-    // address always has an accountable source on chain.
-    // ---------------------------------------------------------------
+    // department head functions.
 
-    function addOfficial(address official, string calldata name, uint256 departmentId)
-        external
-        onlyDepartmentHeadOrAdmin(departmentId)
-    {
-        require(official != address(0), "GovRegistry: zero official address");
-        require(!_officials[official].active, "GovRegistry: official already active");
+    function addOfficial(
+        address official,
+        string calldata name,
+        uint256 departmentId
+    ) external onlyDepartmentHeadOrAdmin(departmentId) {
+        require(
+            official != address(0),
+            "GovRegistry: zero official address"
+        );
+
+        require(
+            !_officials[official].active,
+            "GovRegistry: official already active"
+        );
+
+        // creating and storing official information.
         _officials[official] = OfficialInfo({
             name: name,
             departmentId: departmentId,
@@ -118,67 +197,121 @@ contract GovRegistry is AccessControl, IGovRegistry {
             deactivatedBy: address(0),
             deactivatedAt: 0
         });
+
+        // adding the official to the department list.
         _departmentOfficials[departmentId].push(official);
+
+        // granting official role.
         _grantRole(OFFICIAL_ROLE, official);
-        emit OfficialAdded(official, departmentId, msg.sender, name);
+
+        emit OfficialAdded(
+            official,
+            departmentId,
+            msg.sender,
+            name
+        );
     }
 
     function deactivateOfficial(address official) external {
         OfficialInfo storage info = _officials[official];
-        require(info.active, "GovRegistry: official not active");
+
         require(
-            _departments[info.departmentId].head == msg.sender || hasRole(DEFAULT_ADMIN_ROLE, msg.sender),
+            info.active,
+            "GovRegistry: official not active"
+        );
+
+        require(
+            _departments[info.departmentId].head == msg.sender ||
+                hasRole(DEFAULT_ADMIN_ROLE, msg.sender),
             "GovRegistry: not authorized to deactivate"
         );
+
+        // marking the official as inactive.
         info.active = false;
         info.deactivatedBy = msg.sender;
         info.deactivatedAt = block.timestamp;
+
+        // removing official role.
         _revokeRole(OFFICIAL_ROLE, official);
-        emit OfficialDeactivated(official, info.departmentId, msg.sender);
+
+        emit OfficialDeactivated(
+            official,
+            info.departmentId,
+            msg.sender
+        );
     }
 
-    // ---------------------------------------------------------------
-    // Views used both by the frontend and by other contracts
-    // (ProjectLedger, Tender) to check permissions.
-    // ---------------------------------------------------------------
+    // permission checking functions.
 
-    function isOfficialOfDepartment(address account, uint256 departmentId) public view returns (bool) {
+    function isOfficialOfDepartment(
+        address account,
+        uint256 departmentId
+    ) public view returns (bool) {
         OfficialInfo memory info = _officials[account];
-        return info.active && info.departmentId == departmentId;
+
+        return info.active &&
+            info.departmentId == departmentId;
     }
 
-    function isDepartmentHead(address account, uint256 departmentId) public view returns (bool) {
-        return _departments[departmentId].exists && _departments[departmentId].head == account;
+    function isDepartmentHead(
+        address account,
+        uint256 departmentId
+    ) public view returns (bool) {
+        return _departments[departmentId].exists &&
+            _departments[departmentId].head == account;
     }
 
-    function isAuthorizedForDepartment(address account, uint256 departmentId) public view returns (bool) {
-        return isOfficialOfDepartment(account, departmentId) || isDepartmentHead(account, departmentId)
-            || hasRole(DEFAULT_ADMIN_ROLE, account);
+    function isAuthorizedForDepartment(
+        address account,
+        uint256 departmentId
+    ) public view returns (bool) {
+        return
+            isOfficialOfDepartment(
+                account,
+                departmentId
+            ) ||
+            isDepartmentHead(
+                account,
+                departmentId
+            ) ||
+            hasRole(DEFAULT_ADMIN_ROLE, account);
     }
 
-    function departmentExists(uint256 departmentId) public view returns (bool) {
+    function departmentExists(
+        uint256 departmentId
+    ) public view returns (bool) {
         return _departments[departmentId].exists;
     }
 
-    function getDepartment(uint256 departmentId) external view returns (Department memory) {
-        require(_departments[departmentId].exists, "GovRegistry: department does not exist");
+    function getDepartment(
+        uint256 departmentId
+    ) external view returns (Department memory) {
+        require(
+            _departments[departmentId].exists,
+            "GovRegistry: department does not exist"
+        );
+
         return _departments[departmentId];
     }
 
-    function getDepartmentCount() external view returns (uint256) {
+    function getDepartmentCount()
+        external
+        view
+        returns (uint256)
+    {
         return _departmentCounter;
     }
 
-    function getOfficial(address account) external view returns (OfficialInfo memory) {
+    function getOfficial(
+        address account
+    ) external view returns (OfficialInfo memory) {
         return _officials[account];
     }
 
-    /// @notice Every address ever added under this department, active
-    ///         or not, in the order they were added. The frontend
-    ///         filters by `.active` where only current staff should
-    ///         show, and shows the full list where a history view is
-    ///         wanted instead.
-    function getDepartmentOfficials(uint256 departmentId) external view returns (address[] memory) {
+    // returns all officials ever added to a department.
+    function getDepartmentOfficials(
+        uint256 departmentId
+    ) external view returns (address[] memory) {
         return _departmentOfficials[departmentId];
     }
 }

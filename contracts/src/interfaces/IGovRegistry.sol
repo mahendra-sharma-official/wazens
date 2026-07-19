@@ -1,17 +1,28 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @notice Minimal interface that ProjectLedger (and future modules) use
-///         to check identity and authorization against GovRegistry.
-///         Keeping this as a small interface means ProjectLedger never
-///         needs to know about roles, departments internals, etc, it
-///         just asks "is this account allowed to act for this department".
+// interface used by other contracts to check permissions and department data.
 interface IGovRegistry {
-    function isOfficialOfDepartment(address account, uint256 departmentId) external view returns (bool);
+    // checks if an account is an active official of a department.
+    function isOfficialOfDepartment(
+        address account,
+        uint256 departmentId
+    ) external view returns (bool);
 
-    function isDepartmentHead(address account, uint256 departmentId) external view returns (bool);
+    // checks if an account is the head of a department.
+    function isDepartmentHead(
+        address account,
+        uint256 departmentId
+    ) external view returns (bool);
 
-    function isAuthorizedForDepartment(address account, uint256 departmentId) external view returns (bool);
+    // checks if an account is authorized to act for a department.
+    function isAuthorizedForDepartment(
+        address account,
+        uint256 departmentId
+    ) external view returns (bool);
 
-    function departmentExists(uint256 departmentId) external view returns (bool);
+    // checks if a department exists.
+    function departmentExists(
+        uint256 departmentId
+    ) external view returns (bool);
 }
