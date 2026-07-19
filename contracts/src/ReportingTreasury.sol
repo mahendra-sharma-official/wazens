@@ -34,6 +34,18 @@ contract ReportingTreasury {
     uint256 public totalSponsored;
     uint256 public reportsSponsoredCount;
 
+    /// @notice Minimum time between sponsored reports from the same reporter.
+    uint256 public constant REPORT_COOLDOWN = 1 hours;
+
+    /// @notice Maximum treasury reimbursement a single reporter can receive.
+    uint256 public constant MAX_SPONSORED_PER_REPORTER = 0.02 ether;
+
+    /// @notice Timestamp of the last sponsored report for a reporter.
+    mapping(address => uint256) public lastSponsoredReportAt;
+
+    /// @notice Total reimbursement received by a reporter.
+    mapping(address => uint256) public sponsoredAmountByReporter;
+
     /// @dev Small buffer added on top of measured gas, covering the
     ///      base transaction cost (21000 gas) and the cost of this
     ///      wrapper call itself, which gasleft() accounting inside the
@@ -42,11 +54,28 @@ contract ReportingTreasury {
 
     event Funded(address indexed from, uint256 amount);
     event ReportSponsored(
-        uint256 indexed projectId, uint256 indexed reportIndex, address indexed reporter, address relayer, uint256 refund
+        uint256 indexed projectId,
+        uint256 indexed reportIndex,
+        address indexed reporter,
+        address relayer,
+        uint256 refund
+    );
+
+    event ReporterCooldownTriggered(
+        address indexed reporter,
+        uint256 nextEligibleTime
+    );
+
+    event ReporterSponsorCapReached(
+        address indexed reporter,
+        uint256 totalSponsored
     );
 
     constructor(address ledgerAddress) {
-        require(ledgerAddress != address(0), "ReportingTreasury: zero ledger address");
+        require(
+            ledgerAddress != address(0),
+            "ReportingTreasury: zero ledger address"
+        );
         ledger = ProjectLedger(ledgerAddress);
     }
 
@@ -63,16 +92,36 @@ contract ReportingTreasury {
     ///         it out of pocket. What makes this a "sponsored" report
     ///         is that this contract pays that gas back to them
     ///         immediately afterward.
-    function sponsorReport(address reporter, uint256 projectId, string calldata comment, bytes calldata signature)
-        external
-        returns (uint256 reportIndex)
-    {
+    function sponsorReport(
+        address reporter,
+        uint256 projectId,
+        string calldata comment,
+        bytes calldata signature
+    ) external returns (uint256 reportIndex) {
+        uint256 lastReport = lastSponsoredReportAt[reporter];
+
+        require(
+            block.timestamp >= lastReport + REPORT_COOLDOWN,
+            "ReportingTreasury: reporter cooldown active"
+        );
         uint256 startGas = gasleft();
 
-        reportIndex = ledger.fileCitizenReportBySignature(reporter, projectId, comment, signature);
-
+        reportIndex = ledger.fileCitizenReportBySignature(
+            reporter,
+            projectId,
+            comment,
+            signature
+        );
+        lastSponsoredReportAt[reporter] = block.timestamp;
         uint256 gasUsed = startGas - gasleft() + GAS_OVERHEAD;
         uint256 refund = gasUsed * tx.gasprice;
+
+        uint256 remainingAllowance = MAX_SPONSORED_PER_REPORTER -
+            sponsoredAmountByReporter[reporter];
+
+        if (refund > remainingAllowance) {
+            refund = remainingAllowance;
+        }
         if (refund > address(this).balance) {
             refund = address(this).balance;
         }
@@ -80,11 +129,19 @@ contract ReportingTreasury {
         totalSponsored += refund;
         reportsSponsoredCount += 1;
 
+        sponsoredAmountByReporter[reporter] += refund;
+
         if (refund > 0) {
-            (bool sent,) = payable(msg.sender).call{value: refund}("");
+            (bool sent, ) = payable(msg.sender).call{value: refund}("");
             require(sent, "ReportingTreasury: refund transfer failed");
         }
 
-        emit ReportSponsored(projectId, reportIndex, reporter, msg.sender, refund);
+        emit ReportSponsored(
+            projectId,
+            reportIndex,
+            reporter,
+            msg.sender,
+            refund
+        );
     }
 }
