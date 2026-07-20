@@ -2,33 +2,45 @@
 // Reads the addresses forge just deployed (from the broadcast log) and
 // writes them into frontend/.env.local so Vite picks them up. Run
 // automatically by scripts/deploy.sh after a successful deployment.
-import { readFileSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
+
+import {readFileSync, writeFileSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
+import path from 'node:path';
 
 const rootDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const chainId = process.argv[2] || "31337";
-const rpcUrl = process.argv[3] || "http://127.0.0.1:8545";
 
-const broadcastPath = path.join(rootDir, "contracts", "broadcast", "Deploy.s.sol", chainId, "run-latest.json");
-const broadcast = JSON.parse(readFileSync(broadcastPath, "utf8"));
+const chainId = process.argv[2] || '31337';
+const rpcUrl = process.argv[3] || 'http://127.0.0.1:8545';
+
+const networkName =
+    chainId === '11155111' ? 'Sepolia' : 'GovLedger Local (Anvil)';
+
+const broadcastPath = path.join(
+    rootDir, 'contracts', 'broadcast', 'Deploy.s.sol', chainId,
+    'run-latest.json');
+
+const broadcast = JSON.parse(readFileSync(broadcastPath, 'utf8'));
 
 const byName = {};
+
 for (const tx of broadcast.transactions) {
-  if (tx.transactionType === "CREATE" && tx.contractName) {
+  if (tx.transactionType === 'CREATE' && tx.contractName) {
     byName[tx.contractName] = tx.contractAddress;
   }
 }
 
-if (!byName.GovRegistry || !byName.ProjectLedger || !byName.Tender || !byName.ReportingTreasury) {
-  console.error("Could not find GovRegistry / ProjectLedger / Tender / ReportingTreasury addresses in the broadcast log.");
+if (!byName.GovRegistry || !byName.ProjectLedger || !byName.Tender ||
+    !byName.ReportingTreasury) {
+  console.error(
+      'Could not find GovRegistry / ProjectLedger / Tender / ReportingTreasury addresses in the broadcast log.');
   process.exit(1);
 }
 
-const envContent = `# Generated automatically by scripts/deploy.sh - do not edit by hand.
+const envContent =
+    `# Generated automatically by scripts/deploy.sh - do not edit by hand.
 VITE_CHAIN_ID=${chainId}
 VITE_RPC_URL=${rpcUrl}
-VITE_NETWORK_NAME=GovLedger Local (Anvil)
+VITE_NETWORK_NAME=${networkName}
 VITE_REGISTRY_ADDRESS=${byName.GovRegistry}
 VITE_LEDGER_ADDRESS=${byName.ProjectLedger}
 VITE_TENDER_ADDRESS=${byName.Tender}
@@ -36,6 +48,7 @@ VITE_TREASURY_ADDRESS=${byName.ReportingTreasury}
 VITE_RELAYER_URL=http://localhost:8787
 `;
 
-writeFileSync(path.join(rootDir, "frontend", ".env.local"), envContent);
-console.log("Wrote frontend/.env.local:");
+writeFileSync(path.join(rootDir, 'frontend', '.env.local'), envContent);
+
+console.log('Wrote frontend/.env.local:');
 console.log(envContent);

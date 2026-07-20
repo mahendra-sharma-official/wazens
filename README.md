@@ -71,6 +71,16 @@ cd wazens
 ./scripts/setup.sh      # one time: installs contract + frontend + relayer deps
 ./scripts/run-local.sh  # starts anvil, deploys + seeds, starts the relayer, starts the frontend
 ```
+
+To run the project on sepolia testnet, run the following commands:
+
+```bash
+cd wazens
+./scripts/setup.sh      # one time: installs contract + frontend + relayer deps
+./scripts/deploy.sh sepolia # starts anvil, deploys + seeds, starts the relayer, starts the frontend
+# Considering you have set required values in .env
+```
+
 To run it in separate terminals (useful when you want to keep anvil's or the relayer's logs visible, or restart just the frontend):
 
 ```bash

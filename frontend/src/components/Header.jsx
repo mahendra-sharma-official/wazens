@@ -17,10 +17,10 @@ export function Header() {
     <header className="site-header">
       <div className="brand" onClick={() => navigate("/")} role="button" tabIndex={0}>
         <span className="seal-mark" aria-hidden="true">
-          GL
+          WZ
         </span>
         <div>
-          <p className="brand-name">GovLedger</p>
+          <p className="brand-name">Wazens</p>
           <p className="brand-tagline">Public accountability register</p>
         </div>
       </div>

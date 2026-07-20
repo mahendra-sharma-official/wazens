@@ -43,7 +43,7 @@ for i in $(seq 1 30); do
   fi
 done
 
-./scripts/deploy.sh
+./scripts/deploy.sh local
 
 echo "==> Starting relayer in the background (log: $RELAYER_LOG)..."
 if [ ! -d relayer/node_modules ]; then

@@ -14,7 +14,12 @@ import "../src/ReportingTreasury.sol";
 contract Deploy is Script {
     function run()
         external
-        returns (GovRegistry registry, ProjectLedger ledger, Tender tender, ReportingTreasury treasury)
+        returns (
+            GovRegistry registry,
+            ProjectLedger ledger,
+            Tender tender,
+            ReportingTreasury treasury
+        )
     {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerKey);
@@ -25,7 +30,10 @@ contract Deploy is Script {
         ledger = new ProjectLedger(address(registry));
         tender = new Tender(address(registry));
         treasury = new ReportingTreasury(address(ledger));
-        treasury.fund{value: 5 ether}();
+
+        uint256 initialFunding = block.chainid == 31337 ? 5 ether : 0.01 ether;
+
+        treasury.fund{value: initialFunding}();
 
         vm.stopBroadcast();
 
