@@ -5,23 +5,9 @@ import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./interfaces/IGovRegistry.sol";
 
-/// @title ProjectLedger
-/// @notice The public ledger of government projects. Anyone can read
-///         every project, milestone and spending record. Writing is
-///         restricted to officials/department heads recognized by
-///         GovRegistry for that specific project's department, so
-///         there is always a clear, on-chain trail of who is
-///         responsible and who recorded what.
-///
-///         Citizen reports are the one exception: filing one never
-///         requires the reporter to hold any ETH. `fileCitizenReport`
-///         still works for anyone willing to pay their own gas, but
-///         `fileCitizenReportBySignature` lets a citizen sign an
-///         EIP-712 message (free, no transaction) and have any relayer
-///         submit it on their behalf; see ReportingTreasury.sol for
-///         the contract that reimburses that relayer's gas from a
-///         dedicated, publicly inspectable government-funded balance.
+// Public ledger contract for government projects.
 contract ProjectLedger is EIP712 {
+    // different statuses that a project can be in.
     enum ProjectStatus {
         Planned,
         Ongoing,
@@ -29,6 +15,7 @@ contract ProjectLedger is EIP712 {
         Cancelled
     }
 
+    // structure for storing project information.
     struct Project {
         uint256 id;
         string name;
@@ -42,6 +29,7 @@ contract ProjectLedger is EIP712 {
         address createdBy;
     }
 
+    // structure for storing project milestones.
     struct Milestone {
         string description;
         uint256 targetDate;
@@ -51,6 +39,7 @@ contract ProjectLedger is EIP712 {
         address completedBy;
     }
 
+    // structure for storing spending records.
     struct SpendingRecord {
         uint256 amount;
         string purpose;
@@ -59,10 +48,7 @@ contract ProjectLedger is EIP712 {
         address recordedBy;
     }
 
-    /// @notice A report's lifecycle. Open is the default state for any
-    ///         freshly filed report. UnderReview signals an official has
-    ///         seen it and is looking into it. Resolved and Dismissed
-    ///         are the two ways a report gets closed out.
+    // different statuses that a citizen report can be in.
     enum ReportStatus {
         Open,
         UnderReview,
@@ -70,6 +56,7 @@ contract ProjectLedger is EIP712 {
         Dismissed
     }
 
+    // structure for storing citizen reports.
     struct CitizenReport {
         address reporter;
         string comment;
@@ -80,24 +67,37 @@ contract ProjectLedger is EIP712 {
         bool gasSponsored;
     }
 
+    // registry contract for checking roles and permissions.
     IGovRegistry public immutable registry;
 
+    // counter for generating project ids.
     uint256 private _projectCounter;
 
+    // stores projects by their id.
     mapping(uint256 => Project) private _projects;
+
+    // stores milestones for each project.
     mapping(uint256 => Milestone[]) private _milestones;
+
+    // stores spending records for each project.
     mapping(uint256 => SpendingRecord[]) private _spendingRecords;
+
+    // stores citizen reports for each project.
     mapping(uint256 => CitizenReport[]) private _reports;
+
+    // stores project ids grouped by department.
     mapping(uint256 => uint256[]) private _departmentProjectIds;
 
-    /// @dev Replay protection for signature based reports, one counter
-    ///      per reporter address, independent of which project they're
-    ///      reporting on.
+    // nonce for preventing replay attacks on signed reports.
     mapping(address => uint256) public reportNonces;
 
+    // EIP-712 typehash used for signed citizen reports.
     bytes32 private constant REPORT_TYPEHASH =
-        keccak256("CitizenReport(address reporter,uint256 projectId,string comment,uint256 nonce)");
+        keccak256(
+            "CitizenReport(address reporter,uint256 projectId,string comment,uint256 nonce)"
+        );
 
+    // events emitted whenever project data changes.
     event ProjectCreated(
         uint256 indexed projectId,
         uint256 indexed departmentId,
@@ -105,44 +105,89 @@ contract ProjectLedger is EIP712 {
         string name,
         uint256 allocatedBudget
     );
+
     event ProjectStatusChanged(
-        uint256 indexed projectId, address indexed changedBy, ProjectStatus oldStatus, ProjectStatus newStatus
-    );
-    event ResponsibleOfficialChanged(
-        uint256 indexed projectId, address indexed oldOfficial, address indexed newOfficial, address changedBy
-    );
-    event MilestoneAdded(
-        uint256 indexed projectId, address indexed addedBy, uint256 milestoneIndex, string description, uint256 targetDate
-    );
-    event MilestoneCompleted(
-        uint256 indexed projectId, address indexed completedBy, uint256 milestoneIndex, string evidenceURI
-    );
-    event SpendingRecorded(
-        uint256 indexed projectId, address indexed recipient, address indexed recordedBy, uint256 amount, string purpose
-    );
-    event CitizenReportFiled(uint256 indexed projectId, address indexed reporter, bool gasSponsored, string comment);
-    event ReportStatusChanged(
-        uint256 indexed projectId, address indexed changedBy, uint256 reportIndex, ReportStatus oldStatus, ReportStatus newStatus
+        uint256 indexed projectId,
+        address indexed changedBy,
+        ProjectStatus oldStatus,
+        ProjectStatus newStatus
     );
 
+    event ResponsibleOfficialChanged(
+        uint256 indexed projectId,
+        address indexed oldOfficial,
+        address indexed newOfficial,
+        address changedBy
+    );
+
+    event MilestoneAdded(
+        uint256 indexed projectId,
+        address indexed addedBy,
+        uint256 milestoneIndex,
+        string description,
+        uint256 targetDate
+    );
+
+    event MilestoneCompleted(
+        uint256 indexed projectId,
+        address indexed completedBy,
+        uint256 milestoneIndex,
+        string evidenceURI
+    );
+
+    event SpendingRecorded(
+        uint256 indexed projectId,
+        address indexed recipient,
+        address indexed recordedBy,
+        uint256 amount,
+        string purpose
+    );
+
+    event CitizenReportFiled(
+        uint256 indexed projectId,
+        address indexed reporter,
+        bool gasSponsored,
+        string comment
+    );
+
+    event ReportStatusChanged(
+        uint256 indexed projectId,
+        address indexed changedBy,
+        uint256 reportIndex,
+        ReportStatus oldStatus,
+        ReportStatus newStatus
+    );
+
+    // constructor for the ProjectLedger contract.
     constructor(address registryAddress) EIP712("GovLedger", "1") {
-        require(registryAddress != address(0), "ProjectLedger: zero registry address");
+        require(
+            registryAddress != address(0),
+            "ProjectLedger: zero registry address"
+        );
+
+        // initializing the registry contract.
         registry = IGovRegistry(registryAddress);
     }
 
+    // ensures caller is authorized for the given department.
     modifier onlyAuthorized(uint256 departmentId) {
-        require(registry.isAuthorizedForDepartment(msg.sender, departmentId), "ProjectLedger: not authorized for department");
+        require(
+            registry.isAuthorizedForDepartment(msg.sender, departmentId),
+            "ProjectLedger: not authorized for department"
+        );
         _;
     }
 
+    // ensures the project exists before continuing.
     modifier projectExists(uint256 projectId) {
-        require(_projects[projectId].createdAt != 0, "ProjectLedger: project does not exist");
+        require(
+            _projects[projectId].createdAt != 0,
+            "ProjectLedger: project does not exist"
+        );
         _;
     }
 
-    // ---------------------------------------------------------------
-    // Writes: restricted to officials/heads of the relevant department
-    // ---------------------------------------------------------------
+    // write functions restricted to authorized department members.
 
     function createProject(
         string calldata name,
@@ -151,17 +196,33 @@ contract ProjectLedger is EIP712 {
         address responsibleOfficial,
         uint256 allocatedBudget
     ) external onlyAuthorized(departmentId) returns (uint256 projectId) {
-        require(registry.departmentExists(departmentId), "ProjectLedger: department does not exist");
-        require(responsibleOfficial != address(0), "ProjectLedger: zero official address");
         require(
-            registry.isOfficialOfDepartment(responsibleOfficial, departmentId)
-                || registry.isDepartmentHead(responsibleOfficial, departmentId),
+            registry.departmentExists(departmentId),
+            "ProjectLedger: department does not exist"
+        );
+
+        require(
+            responsibleOfficial != address(0),
+            "ProjectLedger: zero official address"
+        );
+
+        require(
+            registry.isOfficialOfDepartment(
+                responsibleOfficial,
+                departmentId
+            ) ||
+                registry.isDepartmentHead(
+                    responsibleOfficial,
+                    departmentId
+                ),
             "ProjectLedger: responsible official must belong to department"
         );
 
+        // generating a new project id.
         _projectCounter += 1;
         projectId = _projectCounter;
 
+        // storing the new project.
         _projects[projectId] = Project({
             id: projectId,
             name: name,
@@ -175,40 +236,103 @@ contract ProjectLedger is EIP712 {
             createdBy: msg.sender
         });
 
+        // adding the project to its department list.
         _departmentProjectIds[departmentId].push(projectId);
 
-        emit ProjectCreated(projectId, departmentId, responsibleOfficial, name, allocatedBudget);
+        emit ProjectCreated(
+            projectId,
+            departmentId,
+            responsibleOfficial,
+            name,
+            allocatedBudget
+        );
     }
 
-    function setProjectStatus(uint256 projectId, ProjectStatus newStatus) external projectExists(projectId) {
+    function setProjectStatus(
+        uint256 projectId,
+        ProjectStatus newStatus
+    ) external projectExists(projectId) {
+        // fetching the project.
         Project storage p = _projects[projectId];
-        require(registry.isAuthorizedForDepartment(msg.sender, p.departmentId), "ProjectLedger: not authorized for department");
+
+        require(
+            registry.isAuthorizedForDepartment(
+                msg.sender,
+                p.departmentId
+            ),
+            "ProjectLedger: not authorized for department"
+        );
+
         ProjectStatus old = p.status;
         p.status = newStatus;
-        emit ProjectStatusChanged(projectId, msg.sender, old, newStatus);
+
+        emit ProjectStatusChanged(
+            projectId,
+            msg.sender,
+            old,
+            newStatus
+        );
     }
 
-    function changeResponsibleOfficial(uint256 projectId, address newOfficial) external projectExists(projectId) {
+    function changeResponsibleOfficial(
+        uint256 projectId,
+        address newOfficial
+    ) external projectExists(projectId) {
+        // fetching the project.
         Project storage p = _projects[projectId];
-        require(registry.isAuthorizedForDepartment(msg.sender, p.departmentId), "ProjectLedger: not authorized for department");
+
         require(
-            registry.isOfficialOfDepartment(newOfficial, p.departmentId)
-                || registry.isDepartmentHead(newOfficial, p.departmentId),
+            registry.isAuthorizedForDepartment(
+                msg.sender,
+                p.departmentId
+            ),
+            "ProjectLedger: not authorized for department"
+        );
+
+        require(
+            registry.isOfficialOfDepartment(
+                newOfficial,
+                p.departmentId
+            ) ||
+                registry.isDepartmentHead(
+                    newOfficial,
+                    p.departmentId
+                ),
             "ProjectLedger: new official must belong to department"
         );
+
         address old = p.responsibleOfficial;
         p.responsibleOfficial = newOfficial;
-        emit ResponsibleOfficialChanged(projectId, old, newOfficial, msg.sender);
+
+        emit ResponsibleOfficialChanged(
+            projectId,
+            old,
+            newOfficial,
+            msg.sender
+        );
     }
 
-    function addMilestone(uint256 projectId, string calldata description, uint256 targetDate)
+    function addMilestone(
+        uint256 projectId,
+        string calldata description,
+        uint256 targetDate
+    )
         external
         projectExists(projectId)
         returns (uint256 milestoneIndex)
     {
+        // fetching the project.
         Project storage p = _projects[projectId];
-        require(registry.isAuthorizedForDepartment(msg.sender, p.departmentId), "ProjectLedger: not authorized for department");
 
+        require(
+            registry.isAuthorizedForDepartment(
+                msg.sender,
+                p.departmentId
+            ),
+            "ProjectLedger: not authorized for department"
+        );
+
+        // creating and storing the milestone.
         _milestones[projectId].push(
             Milestone({
                 description: description,
@@ -219,39 +343,91 @@ contract ProjectLedger is EIP712 {
                 completedBy: address(0)
             })
         );
+
         milestoneIndex = _milestones[projectId].length - 1;
-        emit MilestoneAdded(projectId, msg.sender, milestoneIndex, description, targetDate);
+
+        emit MilestoneAdded(
+            projectId,
+            msg.sender,
+            milestoneIndex,
+            description,
+            targetDate
+        );
     }
 
-    function completeMilestone(uint256 projectId, uint256 milestoneIndex, string calldata evidenceURI)
-        external
-        projectExists(projectId)
-    {
+    function completeMilestone(
+        uint256 projectId,
+        uint256 milestoneIndex,
+        string calldata evidenceURI
+    ) external projectExists(projectId) {
+        // fetching the project.
         Project storage p = _projects[projectId];
-        require(registry.isAuthorizedForDepartment(msg.sender, p.departmentId), "ProjectLedger: not authorized for department");
-        require(milestoneIndex < _milestones[projectId].length, "ProjectLedger: invalid milestone index");
+
+        require(
+            registry.isAuthorizedForDepartment(
+                msg.sender,
+                p.departmentId
+            ),
+            "ProjectLedger: not authorized for department"
+        );
+
+        require(
+            milestoneIndex < _milestones[projectId].length,
+            "ProjectLedger: invalid milestone index"
+        );
 
         Milestone storage m = _milestones[projectId][milestoneIndex];
-        require(!m.completed, "ProjectLedger: milestone already completed");
 
+        require(
+            !m.completed,
+            "ProjectLedger: milestone already completed"
+        );
+
+        // marking the milestone as completed.
         m.completed = true;
         m.completedAt = block.timestamp;
         m.evidenceURI = evidenceURI;
         m.completedBy = msg.sender;
 
-        emit MilestoneCompleted(projectId, msg.sender, milestoneIndex, evidenceURI);
+        emit MilestoneCompleted(
+            projectId,
+            msg.sender,
+            milestoneIndex,
+            evidenceURI
+        );
     }
 
-    function recordSpending(uint256 projectId, uint256 amount, string calldata purpose, address recipient)
-        external
-        projectExists(projectId)
-    {
+    function recordSpending(
+        uint256 projectId,
+        uint256 amount,
+        string calldata purpose,
+        address recipient
+    ) external projectExists(projectId) {
+        // fetching the project.
         Project storage p = _projects[projectId];
-        require(registry.isAuthorizedForDepartment(msg.sender, p.departmentId), "ProjectLedger: not authorized for department");
-        require(amount > 0, "ProjectLedger: amount must be positive");
-        require(p.spentBudget + amount <= p.allocatedBudget, "ProjectLedger: exceeds allocated budget");
 
+        require(
+            registry.isAuthorizedForDepartment(
+                msg.sender,
+                p.departmentId
+            ),
+            "ProjectLedger: not authorized for department"
+        );
+
+        require(
+            amount > 0,
+            "ProjectLedger: amount must be positive"
+        );
+
+        require(
+            p.spentBudget + amount <= p.allocatedBudget,
+            "ProjectLedger: exceeds allocated budget"
+        );
+
+        // increasing the spent budget.
         p.spentBudget += amount;
+
+        // storing the spending record.
         _spendingRecords[projectId].push(
             SpendingRecord({
                 amount: amount,
@@ -262,46 +438,83 @@ contract ProjectLedger is EIP712 {
             })
         );
 
-        emit SpendingRecorded(projectId, recipient, msg.sender, amount, purpose);
+        emit SpendingRecorded(
+            projectId,
+            recipient,
+            msg.sender,
+            amount,
+            purpose
+        );
     }
 
-    // ---------------------------------------------------------------
-    // Citizen reports: the only actions in this contract open to
-    // absolutely anyone, no registry role required.
-    // ---------------------------------------------------------------
+    // citizen reporting functions (open to everyone).
 
-    /// @notice File a report paying your own gas.
-    function fileCitizenReport(uint256 projectId, string calldata comment) external projectExists(projectId) returns (uint256 reportIndex) {
-        reportIndex = _pushReport(projectId, msg.sender, comment, false);
+    // file a report while paying your own gas.
+    function fileCitizenReport(
+        uint256 projectId,
+        string calldata comment
+    ) external projectExists(projectId) returns (uint256 reportIndex) {
+        reportIndex = _pushReport(
+            projectId,
+            msg.sender,
+            comment,
+            false
+        );
     }
 
-    /// @notice File a report on behalf of `reporter`, gas paid by
-    ///         whoever calls this (typically ReportingTreasury on
-    ///         behalf of a relayer). `reporter` never signs or sends a
-    ///         transaction themselves, only an off-chain EIP-712
-    ///         signature proving they authored this exact report.
-    ///         Callable by anyone, the signature is what authenticates
-    ///         the reporter, not msg.sender.
+    // file a report using an off-chain signature and sponsored gas.
     function fileCitizenReportBySignature(
         address reporter,
         uint256 projectId,
         string calldata comment,
         bytes calldata signature
     ) external projectExists(projectId) returns (uint256 reportIndex) {
+        // getting the current nonce for the reporter.
         uint256 nonce = reportNonces[reporter];
-        bytes32 structHash = keccak256(abi.encode(REPORT_TYPEHASH, reporter, projectId, keccak256(bytes(comment)), nonce));
-        bytes32 digest = _hashTypedDataV4(structHash);
-        address recovered = ECDSA.recover(digest, signature);
-        require(recovered == reporter, "ProjectLedger: invalid signature");
 
+        // creating the EIP-712 message hash.
+        bytes32 structHash = keccak256(
+            abi.encode(
+                REPORT_TYPEHASH,
+                reporter,
+                projectId,
+                keccak256(bytes(comment)),
+                nonce
+            )
+        );
+
+        bytes32 digest = _hashTypedDataV4(structHash);
+
+        // recovering the signer from the signature.
+        address recovered = ECDSA.recover(
+            digest,
+            signature
+        );
+
+        // making sure the signature belongs to the reporter.
+        require(
+            recovered == reporter,
+            "ProjectLedger: invalid signature"
+        );
+
+        // incrementing the nonce after successful verification.
         reportNonces[reporter] = nonce + 1;
-        reportIndex = _pushReport(projectId, reporter, comment, true);
+
+        reportIndex = _pushReport(
+            projectId,
+            reporter,
+            comment,
+            true
+        );
     }
 
-    function _pushReport(uint256 projectId, address reporter, string calldata comment, bool gasSponsored)
-        private
-        returns (uint256 reportIndex)
-    {
+    function _pushReport(
+        uint256 projectId,
+        address reporter,
+        string calldata comment,
+        bool gasSponsored
+    ) private returns (uint256 reportIndex) {
+        // creating and storing the report.
         _reports[projectId].push(
             CitizenReport({
                 reporter: reporter,
@@ -313,39 +526,70 @@ contract ProjectLedger is EIP712 {
                 gasSponsored: gasSponsored
             })
         );
+
         reportIndex = _reports[projectId].length - 1;
-        emit CitizenReportFiled(projectId, reporter, gasSponsored, comment);
+
+        emit CitizenReportFiled(
+            projectId,
+            reporter,
+            gasSponsored,
+            comment
+        );
     }
 
-    /// @notice Lets an official (or head, or admin) of a project's
-    ///         department move a citizen report through its lifecycle:
-    ///         mark it under review, then resolved or dismissed.
-    function updateReportStatus(uint256 projectId, uint256 reportIndex, ReportStatus newStatus)
+    // update the status of a citizen report.
+    function updateReportStatus(
+        uint256 projectId,
+        uint256 reportIndex,
+        ReportStatus newStatus
+    )
         external
         projectExists(projectId)
     {
+        // fetching the project.
         Project storage p = _projects[projectId];
-        require(registry.isAuthorizedForDepartment(msg.sender, p.departmentId), "ProjectLedger: not authorized for department");
-        require(reportIndex < _reports[projectId].length, "ProjectLedger: invalid report index");
 
-        CitizenReport storage r = _reports[projectId][reportIndex];
+        require(
+            registry.isAuthorizedForDepartment(
+                msg.sender,
+                p.departmentId
+            ),
+            "ProjectLedger: not authorized for department"
+        );
+
+        require(
+            reportIndex < _reports[projectId].length,
+            "ProjectLedger: invalid report index"
+        );
+
+        CitizenReport storage r =
+            _reports[projectId][reportIndex];
+
+        // updating the report status and triage info.
         ReportStatus old = r.status;
         r.status = newStatus;
         r.triagedBy = msg.sender;
         r.triagedAt = block.timestamp;
 
-        emit ReportStatusChanged(projectId, msg.sender, reportIndex, old, newStatus);
+        emit ReportStatusChanged(
+            projectId,
+            msg.sender,
+            reportIndex,
+            old,
+            newStatus
+        );
     }
 
-    /// @notice The EIP-712 domain separator's name/version plus this
-    ///         contract's address and chain id are what MetaMask shows
-    ///         (and what a signature is scoped to) when a citizen signs
-    ///         a report. Exposed so the frontend can build the exact
-    ///         same typed data structure without guessing at it.
+    // returns EIP-712 domain data used by the frontend.
     function eip712Domain_()
         external
         view
-        returns (string memory name, string memory version, uint256 chainId, address verifyingContract)
+        returns (
+            string memory name,
+            string memory version,
+            uint256 chainId,
+            address verifyingContract
+        )
     {
         name = "GovLedger";
         version = "1";
@@ -353,13 +597,16 @@ contract ProjectLedger is EIP712 {
         verifyingContract = address(this);
     }
 
-    // ---------------------------------------------------------------
-    // Views: open to everyone, no restriction. This is the "public
-    // ledger" part of the dapp.
-    // ---------------------------------------------------------------
+    // public view functions.
 
-    function getProject(uint256 projectId) external view returns (Project memory) {
-        require(_projects[projectId].createdAt != 0, "ProjectLedger: project does not exist");
+    function getProject(
+        uint256 projectId
+    ) external view returns (Project memory) {
+        require(
+            _projects[projectId].createdAt != 0,
+            "ProjectLedger: project does not exist"
+        );
+
         return _projects[projectId];
     }
 
@@ -367,19 +614,27 @@ contract ProjectLedger is EIP712 {
         return _projectCounter;
     }
 
-    function getMilestones(uint256 projectId) external view returns (Milestone[] memory) {
+    function getMilestones(
+        uint256 projectId
+    ) external view returns (Milestone[] memory) {
         return _milestones[projectId];
     }
 
-    function getSpendingRecords(uint256 projectId) external view returns (SpendingRecord[] memory) {
+    function getSpendingRecords(
+        uint256 projectId
+    ) external view returns (SpendingRecord[] memory) {
         return _spendingRecords[projectId];
     }
 
-    function getReports(uint256 projectId) external view returns (CitizenReport[] memory) {
+    function getReports(
+        uint256 projectId
+    ) external view returns (CitizenReport[] memory) {
         return _reports[projectId];
     }
 
-    function getDepartmentProjectIds(uint256 departmentId) external view returns (uint256[] memory) {
+    function getDepartmentProjectIds(
+        uint256 departmentId
+    ) external view returns (uint256[] memory) {
         return _departmentProjectIds[departmentId];
     }
 }
